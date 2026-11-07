@@ -1,0 +1,20 @@
+/// Raw peripheral definitions used by the runtime and available for advanced
+/// firmware that needs a register not yet wrapped by a HAL API.
+pub const registers = @import("periph/registers.zig");
+pub const system = @import("system/system.zig");
+pub const gpio = @import("hal/gpio.zig");
+pub const time = @import("hal/time.zig");
+pub const i2c = @import("hal/i2c.zig");
+pub const ssd1306 = @import("hal/ssd1306.zig");
+pub const input = @import("hal/input.zig");
+pub const flash = @import("hal/flash.zig");
+pub const uart = @import("hal/uart.zig");
+pub const log = @import("hal/log.zig");
+pub const swio_log = @import("hal/swio_log.zig");
+pub const pwm = @import("hal/pwm.zig");
+pub const tone = @import("hal/tone.zig");
+pub const adc = @import("hal/adc.zig");
+pub const exti = @import("hal/exti.zig");
+pub const spi = @import("hal/spi.zig");
+pub const dma = @import("hal/dma.zig");
+pub const ir = @import("hal/ir.zig");

@@ -1,0 +1,11 @@
+.{
+    .name = .zinn,
+    .version = "0.1.0",
+    .fingerprint = 0x33b4653d2c1b9513,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{ .ch32fun_zig = .{
+        .path = "vendor/ch32fun_zig",
+        .lazy = true,
+    } },
+    .paths = .{ "build.zig", "build.zig.zon", "vendor", "src", "examples", "tests", "tools", "docs", "README.md", "LICENSE" },
+}
