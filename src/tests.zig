@@ -63,7 +63,7 @@ test "multilayer XOR golden vectors and reusable workspace" {
         M.infer(&input, &out, &ws);
         try std.testing.expectEqualSlices(i8, &expected, &out);
     }
-    try expect(@as(usize, 4), M.workspace_bytes);
+    try expect(@as(usize, 2), M.workspace_bytes);
 }
 test "tensor and argmax tie/empty/negative" {
     var t: z.Tensor(i8, &.{ 2, 3 }) = .{ .data = @splat(0) };
@@ -85,4 +85,20 @@ test "unequal layer widths, output alias, nonzero relu zero and saturation" {
     data = .{ -128, -128, -128 };
     M.infer(&data, &data, &ws);
     try std.testing.expectEqualSlices(i8, &.{ 0, 0, 0 }, &data);
+}
+
+test "single layer alias and three layer asymmetric workspace" {
+    const A = z.Dense(.{ .input = 2, .output = 2, .weights = &.{ 0, 1, 1, 0 }, .bias = &.{ 0, 0 } });
+    const M = z.Sequential(.{A});
+    var ws: M.Workspace = undefined;
+    var data = [2]i8{ 3, 7 };
+    M.infer(&data, &data, &ws);
+    try std.testing.expectEqualSlices(i8, &.{ 7, 3 }, &data);
+    const B = z.Dense(.{ .input = 2, .output = 1, .weights = &.{ 1, 1 }, .bias = &.{0} });
+    const C = z.Dense(.{ .input = 1, .output = 2, .weights = &.{ 1, -1 }, .bias = &.{ 0, 0 } });
+    const N = z.Sequential(.{ A, B, C });
+    var nws: N.Workspace = undefined;
+    N.infer(&data, &data, &nws);
+    try std.testing.expectEqualSlices(i8, &.{ 10, -10 }, &data);
+    try expect(@as(usize, 3), N.workspace_bytes);
 }

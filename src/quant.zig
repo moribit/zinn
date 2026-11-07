@@ -4,7 +4,22 @@ pub const Params = struct {
     shift: u5 = 0,
     input_zero: i8 = 0,
     output_zero: i8 = 0,
+    /// Optional compile-time real-value metadata. All three or none.
+    input_scale: ?f32 = null,
+    weight_scale: ?f32 = null,
+    output_scale: ?f32 = null,
     pub fn validate(comptime self: Params) void {
+        const std = @import("std");
+        const scales = .{ self.input_scale, self.weight_scale, self.output_scale };
+        if (self.input_scale != null or self.weight_scale != null or self.output_scale != null) {
+            inline for (scales) |scale| {
+                const value = scale orelse @compileError("quantization scales must be specified together");
+                if (!std.math.isFinite(value) or value <= 0) @compileError("quantization scale must be finite and positive");
+            }
+            const ratio = @as(f64, self.input_scale.?) * self.weight_scale.? / self.output_scale.?;
+            const actual = @as(f64, @floatFromInt(self.multiplier)) / @as(f64, @floatFromInt(@as(u64, 1) << self.shift));
+            if (@abs(actual - ratio) > ratio * 0.0001) @compileError("requantization coefficient disagrees with scales");
+        }
         if (self.multiplier == 0) @compileError("quantization multiplier must be positive");
     }
 };

@@ -1,4 +1,6 @@
-# 初期検証レポート
+# 初期検証レポート（過去のbaseline）
+
+現行の結果と変更点は[次フェーズ検証レポート](next-phase-report.md)を参照。以下の値は初期コミット時点の記録。
 
 環境: 2026-11-07、macOS aarch64、`zig version` = 0.17.0。ローカルで確認。GitHub Actionsの実行結果はまだない。
 

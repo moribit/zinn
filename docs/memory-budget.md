@@ -1,40 +1,31 @@
-# メモリ予算
+# メモリ予算（現行）
 
-Zig 0.17.0 / small / RV32EC。`zig build size` はPure ZigのELF32 section parserでALLOCセクションを集計する。FlashはNOBITSを除きdata初期値も加える。RAMはRAM領域のALLOC（data/bss）を加える。debug情報やELFファイル自体のサイズをFlashと誤認しない。
+CNN/MNISTの4構成は[MNIST検証レポート](mnist-report.md)を参照。
 
-| 項目 | 初期XOR実測 |
-|---|---:|
-| reset | 20 B |
-| vectors | 156 B |
-| text + rodata（モデル・runtime・SWIO込み） | 2996 B |
-| data / Flash初期値 | 0 B |
-| bss（HAL状態含む） | 12 B |
-| Flash合計 | 3172 / 16320 B |
-| HAL予約USER_DATA | 64 B |
-| モデルworkspace（bssに含む） | 4 B |
-| スタック予算 | 512 B |
-| 静的RAM + スタック予算 | 524 / 2048 B |
+Zig 0.17.0 / small / RV32EC、CH32V003向け。`zig build size` の最終ELF計測値。
 
-RAM input/outputは各2B。コンパイラのalias/lifetime最適化があるため、単純な宣言サイズ合計とELFのbssは必ずしも一致しない。重み8Bとbias16BはFlash。Flashにはsoftware multiplyやSWIO整数フォーマットのcompiler-rtも含まれる。
+| Firmware | Flash | 静的SRAM | workspace（SRAMに含む） | SRAM＋stack予算512B |
+|---|---:|---:|---:|---:|
+| 既存手書きXOR診断版 | 3148 B | 12 B | 2 B | 524 B |
+| 学習XOR本番版 | 1508 B | 16 B | 8 B | 528 B |
+| 学習XOR診断版（quant probe込み） | 4188 B | 24 B | 8 B | 536 B |
 
-`zig build size` は16320B Flash / (2048-512)B静的RAMを超えたら失敗する。512Bは実測値ではなく、スタックの許容量。上流リンカのRAM/Flash領域チェックに加えて予算を確認する。
+Flash物理容量16384BのうちHALが末尾64Bを予約し、ロード可能容量は16320B。RAMは2048B。全版が予算内。旧手書きXORは初期baselineの3172Bから24B減、静的RAMは12Bで同じ。workspaceは4→2Bだが、セクションの4B alignmentにより最終RAMが2B減るとは限らない。
 
-## スタックの静的確認
+学習モデルはint8 weights32B＋bias40B＝parameter_bytes72B、input/output各2B。診断版のdata8Bはprobe値と係数、bss16Bはworkspace/入出力/HAL状態。全体にはStartup、vector table156B、runtime、compiler-rt、ログ（診断版のみ）が含まれる。
 
-今回のELFをLLVM objdumpで確認（補助検証のみ。ビルド必須依存ではない）。debug symbolsを残してもロード対象サイズは不変。
+## 検査
 
-| 関数 | frame B |
-|---|---:|
-| reset C / runtime main | 各4 |
-| app main | 72 |
-| Dense | 36 |
-| SWIO writeAll / writeUnsigned | 12 / 48 |
-| compiler-rt muldi3 / udivmoddi4 / divwide | 48 / 52 / 44 |
+`Model.parameter_bytes/activation_bytes/checkBudget(Target)` はモデル単体の概算。生成モデルのファームウェアでcomptime検査する。最終ELF検査はPure ZigのPT_LOAD parserを用い、Flashはphysical address＋file sizeの最大到達位置、RAMはvirtual address＋memory sizeの最大到達位置で計算する。配置の隙間、dataのFlash LMA、bssも含め、debug sectionやELFファイルサイズを容量と誤認しない。
 
-通常経路で到達する上表の全フレームを合計した保守的上限320B（相互排他的な呼び出しも加算）。推論経路は4+4+72+36=116B、mulsi3はフレーム0。再帰・動的フレームなし。通常経路の320Bは512B以内。これはこのELFの静的確認で、一般のモデルやコンパイラ版への保証ではない。
+`zig build size` は既定でV003予算を検査する。`-Dflash-bytes/-Dram-bytes/-Dstack-bytes/-Dreserved-flash-bytes` は検査値だけを変更する。`budget.Target`自体はFlash/RAM originも指定可能。V006など別MCUのHAL対応を意味しない。
 
-割込みはこのサンプルでは有効化しない。HALにあるIRQ入口はそれぞれ64Bを別途使う。割込み有効化、ネスト、別ログ処理、モデル変更時はcall chainを再調査する。実機のstack paint/high-water計測は未実施。ELF予算チェックだけでは実際のstack overflowを証明できない。
+容量超過時はFlashBudgetExceeded/SramBudgetExceededと使用量を報告し失敗する。モデル単体の超過は分かりやすいcompile error。意図的なFlash=1024Bで拒否を検証した。CIは明示的なbash/pipefailでteeの上流失敗を保持する。毎回レポート/ELF/binary/checkpoint/生成Zigをartifactへ保存し、継続比較する。
 
-## 継続比較
+## スタック
 
-初期baselineはFlash=3172、static RAM=12、workspace=4 B。CIで毎回 `size-report.txt` とELFを保存し、PR前後の差を比較できる。最大容量超過は自動失敗。baselineからの増分は設計判断のためレビューする。モデルだけでなくStartup/ログ込みの同条件で比較する。
+512Bは許容量であり、実機high-waterの測定値ではない。現在のELFを補助的にLLVM逆アセンブルして通常経路を確認した。
+
+本番版: startup C=4B、runtime main=4B、app=28B、Dense=60B、muldi3=48B、mulsi3=0B。最大call chainの静的見積り144B。診断版はapp=80B、Dense=60B、requant=20B、probe=40B、SWIO writeUnsigned=48B、writeAll=12B、muldi3=48B、udivmod=52B、divwide=44B。startup/runtimeを加え、相互排他的な呼出しも全て加算した保守的上限412Bで512B以内。
+
+今回のサンプルは割込みを有効化しない。HALのIRQ入口には各64B frameがあるため、有効化・ネスト・モデル・コンパイラ変更時は再計算する。再帰・動的stack配列は使わない。実機stack paint/high-waterは未実施であり、一般のユーザーモデルへ上記値を適用できない。

@@ -1,23 +1,25 @@
 # アーキテクチャ
 
-## 境界
+`src/`はMCU非依存。HAL importはfirmwareだけ。`ch32fun_zig`のaddFirmware/ch32Target/Startupを未改変で利用する。
 
-`src/` はMCU非依存。`examples/xor/firmware.zig` だけがHALをimportする。Buildは上流の `ch32Target` / `addFirmware` / `.ch32fun` runtimeを利用する。上流コードには変更を加えていない。
+| 層 | 役割 |
+|---|---|
+| Definition | 入力/各層の形状、Dense/Conv2D/AveragePool、activation、parameter layout、schema tag |
+| Trainer | 同じ定義を使うホストf32 Dense/Conv/Pool、MSE/softmax CE、backprop/SGD、評価、checkpoint |
+| export_model.Quantized | 代表入力校正、対称int8/int4化、整数係数計算、Zigソース生成 |
+| Dense / Sequential | 従来の低レベルAPI＋Conv/Pool、comptime検証、ヒープなし整数実行 |
+| budget | モデル見積りと最終ELFのターゲット容量検査 |
 
-- `Tensor(T, dimensions)` は要素数を検証した固定配列。空形状・ゼロ次元・usize乗算オーバーフローを拒否する。
-- `Dense(config)` は型を返す。配列長、量子化、全入力範囲でのint32安全性を検証。重みは `[output][input]` の連続int8、biasはint32でaccumulatorのスケール。
-- `Sequential(.{ LayerTypes... })` は接続を検証し、レイヤー呼び出しだけをinline展開。ニューロンループは通常のループで、巨大なcomptime推論は行わない。
-- `Workspace` は `2 * max(input_len, each output_len)` B。交互に書き込み、最後に出力へコピー。中間int32テンソルは不要、accumulatorは1個。
-- Argmaxは同値なら最初のインデックス、空ならnull。Dense単体は寸法付き配列ポインタを受け取る。カーネルは内部実装で、モデルによる安全性証明を前提とする。
+Trainer/exportのコードは遅延解析され、推論ファームウェアから呼ばれない。生成ソースのscale metadataはcomptime専用。推論でf32を計算せず、外部Cライブラリも使わない。
 
-モデルには動的Graph、allocator、実行時shape情報、仮想呼び出しを持たせない。利用されない演算はZigの遅延解析とリンカGCで除去する。定数は通常 `.rodata` に配置され、HALリンカではFlashへ入る。全モデルをRAMにコピーしない。
+Tensorは空shape・ゼロサイズ次元・要素数乗算overflowを拒否する固定配列。Denseはoutput-major weightsとint32 bias、正しい配列長、int32累積安全性、quantizationを検証する。Sequentialはshape、zero point、指定されたscaleの接続を検証する。実数scaleなしのlegacy同士は従来動作を維持し、metadata付きとの混在は拒否する。
 
-## 所有権と拡張
+## ワークスペース
 
-入力と出力は相互にalias可能。両者ともworkspaceと重ねてはならない。Dense単体では入力と出力を重ねてはならない。workspaceは呼び出し側所有で再入可能性を明示し、推論コアにグローバル状態を置かない。
+2層以上では入力を直接最初のDenseへ渡し、最後のDenseは直接outputへ書く。中間出力について偶数・奇数層ごとの最大幅を計算し、必要な2配列だけを確保する。2層なら中間1面だけ。元のXORは4B→2B、学習XORは旧方式16B相当→8B。入力幅は中間バッファサイズに影響しない。
 
-将来は同じ `input_len/output_len/input_zero/output_zero/run` 契約を満たす別のレイヤー型を追加できる。Convの多次元形状・scratchやpacked重みの契約はその時点で明示拡張する。int4/int2は重みの型とdecodeを分離し、int8の結果を参照にする。出力スケールは現在レイヤー固有で、接続する実数スケールの一致は利用者の責任（ゼロポイントだけを自動検証）。モデルエクスポート形式と学習器は未実装。
+単層の場合は入出力の重なりをアドレスで検出し、alias時のみworkspaceへ入力を退避する。alias保証のためinput_lenの領域を確保する。複数層も入力を使い終わってから出力へ書くため、従来の入出力aliasを維持する。入力/出力とworkspaceの重複、同じworkspaceの同時利用は禁止。Workspace内部のフィールドではなく型とworkspace_bytesを利用する。
 
-## コンパイル時間
+モデルにはGraph interpreter、allocator、実行時shape、仮想呼び出しを持たせない。レイヤー呼び出しだけを展開し、ニューロンループは通常のループ。未使用演算は遅延解析とリンカGCで除去。定数はFlashのrodata、累積は1個のint32で、中間int32テンソルを持たない。
 
-重みを1回走査して各行の絶対値和を計算する。重みごとのコード生成やループ展開はしない。検証のbranch quotaは10,000,000に制限。巨大モデルはこの段階の対象外。
+ImageDefinitionのHWC shapeを学習・量子化・生成で共有する。Conv/Poolは直接演算しim2col bufferを確保しない。int4はFlash上のpacked重みを演算時にdecodeし、workspaceはint8のまま。既存Dense定義のcheckpoint IDは維持し、画像定義には空間shape/演算属性を追加して誤ロードを拒否する。

@@ -6,6 +6,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: mlugg/setup-zig@v2
@@ -16,11 +19,35 @@ jobs:
       - run: zig build test --summary all
       - run: zig build test -Doptimize=safe
       - run: zig build xor
-      - run: zig build firmware
-      - run: zig build size 2>&1 | tee size-report.txt
+      - run: zig build e2e
+      - run: zig build e2e -Dweight-format=int4
+      - run: zig build data-train -Dcsv-train=examples/data_classifier/train.csv -Dcsv-test=examples/data_classifier/test.csv -Dweight-format=int4
+      - name: Offline MNIST-shaped CNN and int4 integration fixtures
+        run: |
+          for model in mlp cnn; do
+            for bits in int8 int4; do
+              zig build mnist mnist-firmware -Dmnist-fixture=true -Dmnist-epochs=1 -Dmnist-model="$model" -Dweight-format="$bits"
+            done
+          done
+      - run: zig build eval -Dcheckpoint=zig-out/models/xor.zinn
+      - run: zig build firmware firmware-trained firmware-production deploy
+      - name: Check memory budgets (preserve pipeline failures)
+        run: |
+          set -euo pipefail
+          zig build size 2>&1 | tee size-report.txt
+      - name: Reject deliberately undersized target
+        run: |
+          if zig build size -Dflash-bytes=1024; then
+            echo "Expected Flash budget rejection"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ matrix.os }}
           path: |
             zig-out/bin/zinn-xor
+            zig-out/bin/zinn-trained-*
+            zig-out/bin/zinn-mnist-*
+            zig-out/firmware/
+            zig-out/models/
             size-report.txt
