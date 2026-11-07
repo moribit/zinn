@@ -3,7 +3,7 @@ const z = @import("zinn");
 const m = @import("trained_model");
 const options = @import("dataset_options");
 const dataset = @import("dataset.zig");
-const S = @import("definition.zig").Structure(options.cnn);
+const S = @import("project_model").Structure;
 const T = z.Trainer(S);
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -11,8 +11,10 @@ pub fn main(init: std.process.Init) !void {
     if (m.schema_tag != S.schema_tag) return error.DefinitionMismatch;
     var model = T.init(42);
     try model.decode(try dataset.read(init, args[1]));
-    const calibration = try dataset.load(T, init, args[2], args[3], try std.fmt.parseInt(usize, args[6], 10));
-    const samples = try dataset.load(T, init, args[4], args[5], try std.fmt.parseInt(usize, args[7], 10));
+    const all_train = try dataset.load(T, init, args[2], args[3], options.train_limit);
+    const partitions = try dataset.partition(T, all_train);
+    const calibration = partitions.training[0..@min(try std.fmt.parseInt(usize, args[6], 10), partitions.training.len)];
+    const samples = if (options.evaluation_test) try dataset.load(T, init, args[4], args[5], try std.fmt.parseInt(usize, args[7], 10)) else partitions.validation[0..@min(try std.fmt.parseInt(usize, args[7], 10), partitions.validation.len)];
     const reference = try z.export_model.QuantizedFormat(S, if (options.int4) .int4 else .int8).calibrate(&model, calibration);
     var ws: m.Model.Workspace = undefined;
     for (samples) |sample| {

@@ -1,5 +1,7 @@
 # データ入力・MNIST・CNN・int4
 
+> 以下には前フェーズの全60,000件学習/test評価の説明を含みます。現在の既定はtrain55,000件＋validation5,000件、評価はvalidation、学習率は10epochごとに0.3倍です。旧条件の再現には`-Dvalidation-count=0 -Ddecay-every=0 -Devaluation-split=test`を明示してください。最新の共通Build API・本番UARTフローは[deployment](deployment.md)、現在の精度・容量は[practicality-report](practicality-report.md)を参照してください。
+
 ## 利用手順
 
 Zig 0.17.0のみで実行する。ダウンロードは明示操作で、通常のtest/XORにはネットワーク不要。

@@ -7,5 +7,5 @@
         .path = "vendor/ch32fun_zig",
         .lazy = true,
     } },
-    .paths = .{ "build.zig", "build.zig.zon", "vendor", "src", "examples", "tests", "tools", "docs", "README.md", "LICENSE" },
+    .paths = .{ "build.zig", "build.zig.zon", "build_support", "vendor", "src", "examples", "tests", "tools", "docs", "README.md", "LICENSE" },
 }

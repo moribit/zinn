@@ -1,7 +1,7 @@
 const std = @import("std");
 const z = @import("zinn");
 const options = @import("dataset_options");
-const S = @import("definition.zig").Structure(options.cnn);
+const S = @import("project_model").Structure;
 const T = z.Trainer(S);
 const Q = z.export_model.QuantizedFormat(S, if (options.int4) .int4 else .int8);
 fn log(init: std.process.Init, comptime fmt: []const u8, args: anytype) !void {
@@ -41,32 +41,23 @@ pub fn main(init: std.process.Init) !void {
         if (epochs == 0 or batch == 0) return error.InvalidTrainingOptions;
         model = T.init(seed);
         const samples = try load(init, args[2], args[3], try number(usize, args[5]));
-        try log(init, "seed={d} epochs={d} minibatch={d} learning_rate={d} train_count={d} preprocessing=area28to16_div255\n", .{ seed, epochs, batch, rate, samples.len });
-        var rng = seed;
-        for (0..epochs) |epoch| {
-            var i = samples.len;
-            while (i > 1) {
-                i -= 1;
-                rng = rng *% 1664525 +% 1013904223;
-                std.mem.swap(T.Sample, &samples[i], &samples[rng % (i + 1)]);
-            }
-            var start: usize = 0;
-            var loss: f64 = 0;
-            while (start < samples.len) : (start += batch) {
-                const chunk = samples[start..@min(start + batch, samples.len)];
-                loss += @as(f64, try model.trainBatch(chunk, rate, .cross_entropy)) * @as(f64, @floatFromInt(chunk.len));
-            }
-            try log(init, "MNIST {s}: epoch={d}/{d} train={d} CE={d:.6}\n", .{ if (options.cnn) "cnn" else "mlp", epoch + 1, epochs, samples.len, loss / @as(f64, @floatFromInt(samples.len)) });
-        }
+        const partitions = try @import("dataset.zig").partition(T, samples);
+        var curve: std.Io.Writer.Allocating = .init(init.arena.allocator());
+        const fitted = try z.fit.train(T, &model, partitions.training, partitions.validation, .{ .epochs = epochs, .batch = batch, .rate = rate, .seed = seed, .decay_every = options.decay_every, .decay = options.decay }, &curve.writer);
+        try std.Io.File.stdout().writeStreamingAll(init.io, curve.written());
+        try log(init, "# selected_epoch={d} train={d} validation={d} validation_correct={d} validation_ce={d} split_seed={d}\n", .{ fitted.best_epoch, fitted.training_count, fitted.validation_count, fitted.best_validation_correct, fitted.best_validation_loss, options.split_seed });
         // Checkpoint epochs historically counts optimizer steps; preserve that contract.
         const bytes = model.encode();
         try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[9], .data = &bytes });
     } else if (std.mem.eql(u8, args[1], "export")) {
         if (args.len != 11) return error.ExpectedExportArguments;
         try model.decode(try read(init, args[2]));
-        if (std.mem.eql(u8, args[3], args[5]) or std.mem.eql(u8, args[4], args[6])) return error.TrainTestPathsMustDiffer;
-        const calibration = try load(init, args[3], args[4], try number(usize, args[7]));
-        const testing = try load(init, args[5], args[6], try number(usize, args[8]));
+        if (options.evaluation_test and (std.mem.eql(u8, args[3], args[5]) or std.mem.eql(u8, args[4], args[6]))) return error.TrainTestPathsMustDiffer;
+        const all_train = try load(init, args[3], args[4], options.train_limit);
+        const partitions = try @import("dataset.zig").partition(T, all_train);
+        const calibration = partitions.training[0..@min(try number(usize, args[7]), partitions.training.len)];
+        const testing = if (options.evaluation_test) try load(init, args[5], args[6], try number(usize, args[8])) else partitions.validation[0..@min(try number(usize, args[8]), partitions.validation.len)];
+        if (testing.len == 0) return error.EmptyValidationSplit;
         const quantized = try Q.calibrate(&model, calibration);
         const evaluation = try model.evaluate(testing);
         var correct: usize = 0;
@@ -77,9 +68,43 @@ pub fn main(init: std.process.Init) !void {
             const floating = model.predict(&sample.input);
             for (output, floating) |integer, f| max_logit_error = @max(max_logit_error, @abs(@as(f32, @floatFromInt(integer)) * quantized.scales[S.layer_count] - f));
         }
-        const report = try std.fmt.allocPrint(init.arena.allocator(), "dataset={s} architecture={s} weights={s} seed={d} optimizer_steps={d} calibration_train_only={d} held_out_test={d} float_correct={d} float_accuracy={d:.4}% quantized_correct={d} quantized_accuracy={d:.4}% max_logit_error={d:.6}\n", .{ if (options.fixture) "synthetic-fixture" else "MNIST", if (options.cnn) "cnn" else "mlp", if (options.int4) "int4" else "int8", model.seed, model.epochs, calibration.len, testing.len, evaluation.correct, 100 * @as(f64, @floatFromInt(evaluation.correct)) / @as(f64, @floatFromInt(testing.len)), correct, 100 * @as(f64, @floatFromInt(correct)) / @as(f64, @floatFromInt(testing.len)), max_logit_error });
+        const report = try std.fmt.allocPrint(init.arena.allocator(), "dataset={s} architecture={s} weights={s} seed={d} optimizer_steps={d} calibration_train_only={d} evaluation_split={s} evaluation_count={d} float_correct={d} float_accuracy={d:.4}% quantized_correct={d} quantized_accuracy={d:.4}% max_logit_error={d:.6}\n", .{ if (options.csv) "CSV" else if (options.fixture) "synthetic-fixture" else "MNIST", if (options.cnn) "cnn" else "mlp", if (options.int4) "int4" else "int8", model.seed, model.epochs, calibration.len, if (options.evaluation_test) "test" else "validation", testing.len, evaluation.correct, 100 * @as(f64, @floatFromInt(evaluation.correct)) / @as(f64, @floatFromInt(testing.len)), correct, 100 * @as(f64, @floatFromInt(correct)) / @as(f64, @floatFromInt(testing.len)), max_logit_error });
         try std.Io.File.stdout().writeStreamingAll(init.io, report);
-        try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[10], .data = report });
+        if (options.report_json) {
+            const parameter_bytes = comptime blk: {
+                var n: usize = 0;
+                for (S.weight_counts, S.bias_counts) |w, b| n += (if (options.int4) (w + 1) / 2 else w) + 4 * b;
+                break :blk n;
+            };
+            const json = try std.json.Stringify.valueAlloc(init.arena.allocator(), .{
+                .schema_version = @as(u32, 1),
+                .model_id = quantized.modelId(),
+                .schema_tag = S.schema_tag,
+                .seed = model.seed,
+                .optimizer_steps = model.epochs,
+                .preprocessing = if (options.csv) "caller_defined" else if (options.nearest) "nearest28to16_div255" else "area28to16_div255",
+                .input_encoding = "signed_i8_twos_complement",
+                .layout = if (options.csv) "flat" else "HWC",
+                .input_count = S.input_len,
+                .output_count = S.output_len,
+                .input_scale = quantized.scales[0],
+                .input_scale_bits = @as(u32, @bitCast(quantized.scales[0])),
+                .zero_point = @as(i8, 0),
+                .output_scale = quantized.scales[S.layer_count],
+                .weight_format = if (options.int4) "int4" else "int8",
+                .parameter_bytes = parameter_bytes,
+                .training_count = partitions.training.len,
+                .validation_count = partitions.validation.len,
+                .calibration_count = calibration.len,
+                .evaluation_split = if (options.evaluation_test) "test" else "validation",
+                .evaluation_count = testing.len,
+                .float_correct = evaluation.correct,
+                .quantized_correct = correct,
+                .max_logit_error = max_logit_error,
+                .hardware_measured = false,
+            }, .{});
+            try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[10], .data = json });
+        } else try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[10], .data = report });
         var source: std.Io.Writer.Allocating = .init(init.arena.allocator());
         try quantized.writeSource(&source.writer);
         const count = @min(16, testing.len);

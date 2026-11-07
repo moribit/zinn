@@ -1,3 +1,7 @@
+pub const Service = @import("service.zig").Service;
+pub const benchmark = @import("benchmark.zig");
+pub const protocol = @import("protocol.zig");
+pub const fit = @import("fit.zig");
 pub const data = @import("data.zig");
 pub const Conv2D = @import("cnn.zig").Conv2D;
 pub const AveragePool2D = @import("cnn.zig").AveragePool2D;
@@ -23,6 +27,11 @@ test {
     _ = @import("tests.zig");
     _ = @import("train_tests.zig");
     _ = @import("budget_tests.zig");
+    _ = @import("stack_audit.zig");
+    _ = @import("fit.zig");
+    _ = @import("benchmark.zig");
+    _ = @import("service.zig");
+    _ = @import("protocol_tests.zig");
     _ = @import("cnn_tests.zig");
     _ = @import("data_tests.zig");
 }

@@ -77,3 +77,48 @@ test "pool rounding is centered on the quantization zero point" {
     Pool.run(&.{ 4, 5, 4, 5 }, &out);
     try std.testing.expectEqual(@as(i8, 4), out[0]);
 }
+
+test "randomized int8 and int4 convolution match independent HWC oracle" {
+    const weights = comptime blk: {
+        var w: [54]i8 = undefined;
+        for (&w, 0..) |*v, i| v.* = @intCast(@as(i32, @intCast(i % 15)) - 7);
+        break :blk w;
+    };
+    const bytes = comptime blk: {
+        var v: [27]u8 = undefined;
+        z.lowbit.encode(&weights, &v) catch unreachable;
+        break :blk v;
+    };
+    const p: z.quant.Params = .{ .multiplier = 3, .shift = 5, .input_zero = -7, .output_zero = 3 };
+    const C = z.Conv2D(.{ .input = .{ .height = 3, .width = 4, .channels = 2 }, .output_channels = 3, .kernel = 3, .stride = 2, .padding = 1, .weights = &weights, .bias = &.{ 123, -71, 0 }, .quant = p, .activation = .relu });
+    const P = z.Conv2D(.{ .input = .{ .height = 3, .width = 4, .channels = 2 }, .output_channels = 3, .kernel = 3, .stride = 2, .padding = 1, .format = .int4, .packed_weights = &bytes, .bias = &.{ 123, -71, 0 }, .quant = p, .activation = .relu });
+    var rng: u32 = 117;
+    for (0..128) |_| {
+        var input: [24]i8 = undefined;
+        for (&input) |*v| {
+            rng = rng *% 1664525 +% 1013904223;
+            v.* = @bitCast(@as(u8, @truncate(rng >> 16)));
+        }
+        var actual: [12]i8 = undefined;
+        var packed_actual: [12]i8 = undefined;
+        C.run(&input, &actual);
+        P.run(&input, &packed_actual);
+        for (0..2) |y| for (0..2) |x| for (0..3) |c| {
+            var acc: i64 = ([_]i32{ 123, -71, 0 })[c];
+            for (0..3) |ky| for (0..3) |kx| {
+                const iy = @as(i32, @intCast(y * 2 + ky)) - 1;
+                const ix = @as(i32, @intCast(x * 2 + kx)) - 1;
+                if (iy >= 0 and iy < 3 and ix >= 0 and ix < 4) for (0..2) |channel| {
+                    const i = (@as(usize, @intCast(iy)) * 4 + @as(usize, @intCast(ix))) * 2 + channel;
+                    const wi = ((c * 3 + ky) * 3 + kx) * 2 + channel;
+                    acc += (@as(i64, input[i]) + 7) * weights[wi];
+                };
+            };
+            const product = acc * 3;
+            const magnitude = (@abs(product) + 16) / 32;
+            const signed = (if (product < 0) -@as(i64, @intCast(magnitude)) else @as(i64, @intCast(magnitude))) + 3;
+            try std.testing.expectEqual(@as(i8, @intCast(@max(3, @min(127, signed)))), actual[(y * 2 + x) * 3 + c]);
+        };
+        try std.testing.expectEqualSlices(i8, &actual, &packed_actual);
+    }
+}

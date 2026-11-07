@@ -17,4 +17,16 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("target memory check FAILED: {s}; reduce model/workspace/logging or choose a matching target budget\n", .{@errorName(err)});
         return err;
     };
+    const json = try std.json.Stringify.valueAlloc(init.arena.allocator(), .{
+        .schema_version = @as(u32, 1),
+        .artifact = std.fs.path.basename(args[1]),
+        .flash_bytes = report.flash,
+        .static_ram_bytes = report.static_ram,
+        .stack_allowance_bytes = target.stack_bytes,
+        .ram_margin_bytes = target.ram_bytes - report.static_ram - target.stack_bytes,
+        .flash_limit_bytes = target.flash_bytes - target.reserved_flash_bytes,
+        .ram_limit_bytes = target.ram_bytes,
+        .hardware_measured = false,
+    }, .{});
+    try std.Io.File.stdout().writeStreamingAll(init.io, json);
 }

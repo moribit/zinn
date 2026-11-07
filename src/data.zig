@@ -93,7 +93,11 @@ pub fn resizeArea(pixels: []const u8, height: usize, width: usize, output: []f32
         output[oy * out_w + ox] = @as(f32, @floatFromInt(sum)) / @as(f32, @floatFromInt(255 * height * width));
     };
 }
+pub const Preprocess = enum { area, nearest };
 pub fn mnist(comptime T: type, allocator: std.mem.Allocator, images: IdxImages, labels: IdxLabels, maximum: usize) ![]T.Sample {
+    return mnistProcessed(T, allocator, images, labels, maximum, .area);
+}
+pub fn mnistProcessed(comptime T: type, allocator: std.mem.Allocator, images: IdxImages, labels: IdxLabels, maximum: usize, preprocess: Preprocess) ![]T.Sample {
     if (images.height != 28 or images.width != 28 or images.count != labels.values.len) return error.MnistShapeMismatch;
     if (maximum == 0) return error.EmptyDataset;
     // Validate all labels, even if a subset is requested.
@@ -102,7 +106,10 @@ pub fn mnist(comptime T: type, allocator: std.mem.Allocator, images: IdxImages, 
     errdefer allocator.free(result);
     for (result, 0..) |*sample, i| {
         if (sample.input.len != 256 or sample.target.len != 10) @compileError("MNIST expects 16x16 input and 10 classes");
-        try resizeArea(try images.image(i), 28, 28, &sample.input, 16, 16);
+        if (preprocess == .area) try resizeArea(try images.image(i), 28, 28, &sample.input, 16, 16) else {
+            const pixels = try images.image(i);
+            for (&sample.input, 0..) |*v, k| v.* = @as(f32, @floatFromInt(pixels[(((k / 16) * 28 + 14) / 16) * 28 + ((k % 16) * 28 + 14) / 16])) / 255;
+        }
         @memset(&sample.target, 0);
         sample.target[labels.values[i]] = 1;
     }

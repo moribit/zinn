@@ -1,6 +1,7 @@
 //! Host-only float32 SGD training; inference does not import this module.
 const std = @import("std");
 const spatial = @import("spatial.zig");
+pub const Evaluation = struct { loss: f32, correct: usize };
 pub const Loss = enum { mse, cross_entropy };
 pub fn checksum(data: []const u8) u64 {
     var result: u64 = 14695981039346656037;
@@ -130,7 +131,10 @@ pub fn Trainer(comptime S: type) type {
             self.epochs += 1;
             return loss / @as(f32, @floatFromInt(samples.len));
         }
-        pub fn evaluate(self: *const Self, samples: []const Sample) !struct { loss: f32, correct: usize } {
+        pub fn evaluate(self: *const Self, samples: []const Sample) !Evaluation {
+            return self.evaluateWithLoss(samples, .mse);
+        }
+        pub fn evaluateWithLoss(self: *const Self, samples: []const Sample, loss_kind: Loss) !Evaluation {
             if (samples.len == 0) return error.EmptyDataset;
             for (self.parameters) |value| if (!std.math.isFinite(value)) return error.NonFiniteParameters;
             var loss: f32 = 0;
@@ -140,15 +144,22 @@ pub fn Trainer(comptime S: type) type {
                 const prediction = self.predict(&sample.input);
                 var predicted: usize = 0;
                 var target: usize = 0;
+                var maximum: f32 = -std.math.inf(f32);
+                for (prediction) |v| maximum = @max(maximum, v);
+                var exp_sum: f32 = 0;
+                if (loss_kind == .cross_entropy) for (prediction) |v| {
+                    exp_sum += @exp(v - maximum);
+                };
                 for (prediction, 0..) |value, i| {
                     if (!std.math.isFinite(value) or !std.math.isFinite(sample.target[i])) return error.NonFiniteEvaluation;
                     if (value > prediction[predicted]) predicted = i;
                     if (sample.target[i] > sample.target[target]) target = i;
                     const d = value - sample.target[i];
-                    loss += d * d / @as(f32, @floatFromInt(S.output_len));
+                    loss += if (loss_kind == .mse) d * d / @as(f32, @floatFromInt(S.output_len)) else -sample.target[i] * (value - maximum - @log(exp_sum));
                 }
                 correct += @intFromBool(predicted == target);
             }
+            if (!std.math.isFinite(loss)) return error.NonFiniteEvaluation;
             return .{ .loss = loss / @as(f32, @floatFromInt(samples.len)), .correct = correct };
         }
         pub fn encode(self: *const Self) [checkpoint_len]u8 {

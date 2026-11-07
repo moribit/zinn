@@ -1,0 +1,1 @@
+.{ .name = .zinn_example, .fingerprint = 0xba38cc397a8afdc1, .version = "0.1.0", .minimum_zig_version = "0.17.0", .dependencies = .{ .zinn = .{ .path = "../.." } }, .paths = .{ "build.zig", "build.zig.zon", "model.zig", "train.csv", "validation.csv" } }

@@ -6,6 +6,19 @@ Zig **0.17.0**。Pure ZigでCSV/MNISTを学習・保存・評価し、int8/int4�
 
 ## 最短のフロー
 
+共通の学習・評価・本番UARTファームウェア生成:
+
+```sh
+zig build mnist-download
+zig build train -Dproject=mnist -Dmnist-hidden=32 -Dlearning-rate=0.1
+zig build evaluate -Dproject=mnist -Dmnist-hidden=32 -Dlearning-rate=0.1
+zig build deploy -Dproject=mnist -Dmnist-hidden=32 -Dlearning-rate=0.1 -Dtarget=ch32v003
+```
+
+既定評価はtraining splitから分離したvalidationです。構成確定後だけ`-Devaluation-split=test`で最終評価します。外部アプリ向け`addProject`、CSV入力、UART交換、成果物とキャッシュは[開発・デプロイ手順](docs/deployment.md)と[最小プロジェクト](examples/project/build.zig)を参照してください。`deploy`は書き込みません。物理書き込みは明示的な`flash`です。
+
+従来の専用コマンドも維持しています:
+
 ```sh
 zig build test                 # 数値・勾配・保存・export・compile-fail
 zig build e2e                  # 学習→保存→再読込→量子化→ソース生成→整数推論
@@ -55,7 +68,7 @@ zig build mnist mnist-firmware -Dmnist-model=cnn -Dweight-format=int4 \
   -Dmnist-checkpoint=zig-out/models/mnist-cnn.zinn
 ```
 
-実データtrain60,000/test10,000、10 epochsでMLP int8=94.23%／int4=93.27%、小型CNN int8=93.09%／int4=90.74%。**95%目標には未達**です。4構成とも生成coreと参照が全test入力で完全一致し、V003容量内でcross-build済み。実機の動作・50ms・stack最大使用量は未検証です。
+validationで構成を固定した最新評価（train55,000/validation5,000/test10,000）では、MLP32 int8=**96.59%**／int4=94.90%、CNN4 int8=97.07%／int4=95.21%。4構成とも全test入力・全logitが独立整数参照と一致し、UART本番版をV003容量内でクロスビルド済みです。CNN4は512Bスタック予算込みのRAM余裕128Bで、追加機能には再検査が必要です。実機の動作・50ms・stack最大使用量は未検証です。[条件・比較・容量](docs/practicality-report.md)。前フェーズのMLP16/CNN2の結果は履歴として残しています。
 
 汎用CSVは `zig build data-train -Dfeatures=... -Dclasses=... -Dcsv-train=... -Dcsv-test=...`。詳細は[データ・MNIST手順](docs/mnist.md)、[実測レポート](docs/mnist-report.md)、[CNN/int4設計](docs/mnist-cnn-int4-design.md)。
 
@@ -81,6 +94,6 @@ Model.infer(&.{ 0, 1 }, &output, &workspace);
 
 Python、外部Cライブラリ、MLランタイムは不要です。HALだけに `ch32fun_zig` の未改変・固定スナップショットを使用します。[出典と公開許可](vendor/ch32fun_zig/UPSTREAM.md)。
 
-詳細: [設計](docs/developer-experience.md)、[アーキテクチャ](docs/architecture.md)、[数値仕様](docs/quantization.md)、[容量](docs/memory-budget.md)、[最新検証](docs/next-phase-report.md)、[初期調査](docs/research.md)。
+詳細: [設計](docs/developer-experience.md)、[アーキテクチャ](docs/architecture.md)、[数値仕様](docs/quantization.md)、[容量](docs/memory-budget.md)、[最新検証](docs/practicality-report.md)、[初期調査](docs/research.md)。
 
 学習器はDense/Conv2D/AveragePool/ReLU、MSEまたはsoftmax CE、mini-batch SGD。量子化は対称int8/int4のmin/max校正です。QAT、自動量子化探索、Depthwise、CH32V006は未実装です。XORの4/4は真理値表の検証であり汎化精度ではありません。

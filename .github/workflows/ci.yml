@@ -15,9 +15,9 @@ jobs:
         with:
           version: 0.17.0
       - run: zig version
-      - run: zig fmt --check build.zig build.zig.zon src examples tests tools
-      - run: zig build test --summary all
-      - run: zig build test -Doptimize=safe
+      - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/project/build.zig examples/project/build.zig.zon examples/project/model.zig
+      - run: zig build test --summary all 2>&1 | tee test-results-debug.txt
+      - run: zig build test -Doptimize=safe --summary all 2>&1 | tee test-results-safe.txt
       - run: zig build xor
       - run: zig build e2e
       - run: zig build e2e -Dweight-format=int4
@@ -26,11 +26,14 @@ jobs:
         run: |
           for model in mlp cnn; do
             for bits in int8 int4; do
-              zig build mnist mnist-firmware -Dmnist-fixture=true -Dmnist-epochs=1 -Dmnist-model="$model" -Dweight-format="$bits"
+              zig build mnist mnist-firmware -Dmnist-fixture=true -Dmnist-epochs=1 -Dmnist-model="$model" -Dweight-format="$bits" -Devaluation-split=test
+              zig build deploy infer-host simulate-uart -Dproject=mnist -Dmnist-fixture=true -Dmnist-epochs=1 -Dmnist-model="$model" -Dweight-format="$bits" -Dapp-name="uart-$model-$bits" -Drequest=benchmark -Devaluation-split=test
             done
           done
       - run: zig build eval -Dcheckpoint=zig-out/models/xor.zinn
       - run: zig build firmware firmware-trained firmware-production deploy
+      - name: External project Build API
+        run: zig build --build-file examples/project/build.zig train evaluate deploy infer-host simulate-uart
       - name: Check memory budgets (preserve pipeline failures)
         run: |
           set -euo pipefail
@@ -39,6 +42,10 @@ jobs:
         run: |
           if zig build size -Dflash-bytes=1024; then
             echo "Expected Flash budget rejection"
+            exit 1
+          fi
+          if zig build deploy -Dproject=mnist -Dmnist-fixture=true -Dmnist-epochs=1 -Dreserved-flash-bytes=16000; then
+            echo "Expected reserved Flash rejection for common deployment"
             exit 1
           fi
       - uses: actions/upload-artifact@v4
@@ -50,4 +57,9 @@ jobs:
             zig-out/bin/zinn-mnist-*
             zig-out/firmware/
             zig-out/models/
+            zig-out/reports/
+            zig-out/inputs/
+            zig-out/training/
+            examples/project/zig-out/reports/
+            test-results-*.txt
             size-report.txt
