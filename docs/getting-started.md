@@ -31,7 +31,7 @@ zig build docs-check
 
 Tests cover numerical/Golden behavior and expected compile failures. docs-check validates local Markdown links and executable API examples without fitting a dataset.
 
-Host progress is separate from stdout reports. Add -Dprogress=plain or -Dquiet=true to root commands. Cacheable training/export phases save detail in zig-out/reports/*-progress.log; auto can update Zig's progress UI. See [controls and limitations](progress.md).
+Host progress is separate from stdout reports. Add -Dprogress=plain or -Dquiet=true to root commands. Training shows live progress, or `cached` and artifact paths when the unchanged fit is reused. Training/export logs remain in zig-out/reports/*-progress.log. See [controls and limitations](progress.md).
 
 ## Train and evaluate XOR
 

@@ -105,7 +105,9 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     const checkpoint = fitting.addOutputFileArg(b.fmt("{s}.zinn", .{options.name}));
     const curve = fitting.captureStdOut(.{});
     const fit_log = fitting.captureStdErr(.{});
-    const train = b.step(b.fmt("{s}train", .{options.step_prefix}), "Train/save model and validation curve");
+    const train_name = b.fmt("{s}train", .{options.step_prefix});
+    const training_steps = progress.training(b, pkg, fitting, options.progress, options.name, train_name, b.fmt("training/{s}.zinn", .{options.name}));
+    const train = training_steps.backend;
     train.dependOn(&b.addInstallFile(checkpoint, b.fmt("training/{s}.zinn", .{options.name})).step);
     train.dependOn(&b.addInstallFile(curve, b.fmt("reports/{s}-training.csv", .{options.name})).step);
     train.dependOn(&b.addInstallFile(fit_log, b.fmt("reports/{s}-training-progress.log", .{options.name})).step);
@@ -197,5 +199,5 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     stack_run.addArgs(&.{ "runtime.startup._start_c", b.fmt("{d}", .{options.stack_bytes}) });
     const stack_audit = b.step(b.fmt("{s}stack-audit", .{options.step_prefix}), "Optional normal-path stack estimate using LLVM disassembly");
     stack_audit.dependOn(&stack_run.step);
-    return .{ .checkpoint = checkpoint, .source = source, .metadata = metadata, .elf = fw.getEmittedBin(), .bin = binary.getOutput(), .train = train, .evaluate = evaluate, .deploy = deploy, .flash = flash, .infer_host = infer_host, .stack_audit = stack_audit, .simulate = simulate };
+    return .{ .checkpoint = checkpoint, .source = source, .metadata = metadata, .elf = fw.getEmittedBin(), .bin = binary.getOutput(), .train = training_steps.display, .evaluate = evaluate, .deploy = deploy, .flash = flash, .infer_host = infer_host, .stack_audit = stack_audit, .simulate = simulate };
 }

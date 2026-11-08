@@ -31,10 +31,11 @@ fn class(target: [S.output_len]f32) usize {
 pub fn main(init: std.process.Init) !void {
     const parsed = try z.host.progress.cli(init);
     const args = parsed.args;
-    var renderer = z.host.progress.Renderer.init(init, parsed.mode);
+    var renderer = z.host.progress.Renderer.initJournal(init, parsed.mode, parsed.journal);
     defer renderer.deinit();
     const observer = renderer.observer();
     try run(init, args, observer);
+    try z.host.progress.saveReceipt(init, parsed);
 }
 fn run(init: std.process.Init, args: []const []const u8, observer: z.host.progress.Observer) !void {
     if (args.len < 2) return error.ExpectedCommand;

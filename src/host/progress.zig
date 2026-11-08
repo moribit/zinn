@@ -68,14 +68,24 @@ fn fitLine(line: []u8, width: usize) []u8 {
     @memcpy(line[end..][0..3], "...");
     return line[0 .. end + 3];
 }
-pub const Cli = struct { args: []const []const u8, mode: Mode };
+pub const Cli = struct { args: []const []const u8, mode: Mode, journal: ?[]const u8 = null, receipt: ?[]const u8 = null };
 /// Remove only progress flags; leave existing positional CLI arguments unchanged.
 pub fn cli(init: std.process.Init) !Cli {
     const raw = try init.minimal.args.toSlice(init.arena.allocator());
     var args: std.ArrayList([]const u8) = .empty;
     var mode = std.meta.stringToEnum(Mode, init.environ_map.get("ZINN_PROGRESS") orelse "auto") orelse return error.InvalidProgressMode;
     var quiet = false;
+    var journal: ?[]const u8 = null;
+    var receipt: ?[]const u8 = null;
     for (raw) |arg| {
+        if (std.mem.startsWith(u8, arg, "--progress-journal=")) {
+            journal = arg[19..];
+            continue;
+        }
+        if (std.mem.startsWith(u8, arg, "--progress-receipt=")) {
+            receipt = arg[19..];
+            continue;
+        }
         if (std.mem.eql(u8, arg, "--quiet")) {
             quiet = true;
             continue;
@@ -86,10 +96,19 @@ pub fn cli(init: std.process.Init) !Cli {
         }
         try args.append(init.arena.allocator(), arg);
     }
-    return .{ .args = try args.toOwnedSlice(init.arena.allocator()), .mode = if (quiet) .off else mode };
+    return .{ .args = try args.toOwnedSlice(init.arena.allocator()), .mode = if (quiet) .off else mode, .journal = journal, .receipt = receipt };
+}
+/// A build-only receipt identifies execution without changing model artifacts.
+pub fn saveReceipt(init_process: std.process.Init, parsed: Cli) !void {
+    const path = parsed.receipt orelse return;
+    const token = if (parsed.journal) |dir| blk: {
+        const session = try std.fs.path.join(init_process.arena.allocator(), &.{ dir, "session" });
+        break :blk std.Io.Dir.cwd().readFileAlloc(init_process.io, session, init_process.arena.allocator(), .limited(128)) catch "unmonitored";
+    } else "unmonitored";
+    try std.Io.Dir.cwd().writeFile(init_process.io, .{ .sub_path = path, .data = token });
 }
 pub const Renderer = struct {
-    const Slot = struct { name: [64]u8 = undefined, len: usize = 0, start_ns: u64 = 0, gate: Gate = .{}, log_gate: Gate = .{}, node: std.Progress.Node = .none };
+    const Slot = struct { name: [64]u8 = undefined, len: usize = 0, start_ns: u64 = 0, gate: Gate = .{}, log_gate: Gate = .{}, epoch_gate: Gate = .{}, node: std.Progress.Node = .none };
     io: std.Io,
     mode: Mode,
     tty: bool = false,
@@ -99,6 +118,15 @@ pub const Renderer = struct {
     root: std.Progress.Node = .none,
     active: bool = false,
     output_failed: bool = false,
+    journal: ?std.Io.File = null,
+    pub fn initJournal(process: std.process.Init, mode: Mode, directory: ?[]const u8) Renderer {
+        var self: Renderer = if (directory == null) init(process, mode) else .{ .io = process.io, .mode = mode };
+        if (directory) |dir| {
+            const path = std.fs.path.join(process.arena.allocator(), &.{ dir, "live.log" }) catch return self;
+            self.journal = std.Io.Dir.cwd().createFile(process.io, path, .{}) catch null;
+        }
+        return self;
+    }
     fn columns(io: std.Io, fallback: usize) usize {
         if (@import("builtin").os.tag == .windows) return @max(1, @min(160, fallback));
         var size: std.posix.winsize = .{ .row = 0, .col = 0, .xpixel = 0, .ypixel = 0 };
@@ -145,11 +173,14 @@ pub const Renderer = struct {
         }
         var epoch: f64 = 0;
         var epochs: f64 = 0;
-        for (event.metrics) |m| {
-            if (std.mem.eql(u8, m.name, "epoch")) epoch = m.value;
-            if (std.mem.eql(u8, m.name, "epochs")) epochs = m.value;
+        for (event.metrics) |metric| {
+            if (std.mem.eql(u8, metric.name, "epoch")) epoch = metric.value;
+            if (std.mem.eql(u8, metric.name, "epochs")) epochs = metric.value;
         }
-        const force = event.kind == .started or event.kind == .completed or event.kind == .failed or (event.kind == .epoch and (epoch == 1 or epoch == epochs));
+        // Report ordinary MNIST epochs promptly, but do not flood terminals
+        // with thousands of sub-millisecond epochs in tiny CSV fixtures.
+        const epoch_summary = event.kind == .epoch and slot.epoch_gate.allow(now, 500_000_000, epoch == 1 or epoch == epochs);
+        const force = event.kind == .started or event.kind == .completed or event.kind == .failed or epoch_summary;
         if (!slot.gate.allow(now, if (self.tty or self.root.index != .none) 200_000_000 else 5_000_000_000, force)) return;
         slot.node.setEstimatedTotalItems(if (event.total) |t| @intCast(@min(t, std.math.maxInt(usize))) else 0);
         slot.node.setCompletedItems(@intCast(@min(event.done, std.math.maxInt(usize))));
@@ -159,30 +190,42 @@ pub const Renderer = struct {
         }
         if (!slot.log_gate.allow(now, if (self.tty) 200_000_000 else 5_000_000_000, force)) return;
         const stats = measure(event, slot.start_ns, now);
-        const inplace = self.tty and (event.kind == .started or event.kind == .updated);
+        const download_event = std.mem.eql(u8, event.unit, "B") or std.mem.eql(u8, event.unit, "files");
+        var inplace = self.tty and (event.kind == .started or event.kind == .updated);
         var bytes: [2048]u8 = undefined;
         var out: std.Io.Writer = .fixed(&bytes);
-        out.print("{s} {s} ", .{ @tagName(event.kind), if (inplace) event.name[0..@min(20, event.name.len)] else event.name }) catch return;
-        if (event.total) |t| {
-            if (inplace) {
-                out.writeAll("[") catch return;
-                for (0..10) |i| out.writeByte(if (@as(f64, @floatFromInt(i)) < stats.fraction.? * 10) '#' else '-') catch return;
-                out.writeAll("] ") catch return;
+        if (download_event) {
+            const formatted = @import("progress_format.zig").format(&bytes, event, stats, self.width) catch return;
+            out.end = formatted.len;
+            if (formatted.len == 0) return;
+            if (std.mem.indexOfScalar(u8, formatted, '\n') != null) inplace = false;
+        } else {
+            out.print("{s} {s} ", .{ @tagName(event.kind), if (inplace) event.name[0..@min(20, event.name.len)] else event.name }) catch return;
+            if (event.total) |t| {
+                if (inplace) {
+                    out.writeAll("[") catch return;
+                    for (0..10) |i| out.writeByte(if (@as(f64, @floatFromInt(i)) < stats.fraction.? * 10) '#' else '-') catch return;
+                    out.writeAll("] ") catch return;
+                }
+                out.print("{d:.0}% {d}/{d} ", .{ 100 * stats.fraction.?, event.done, t }) catch return;
+            } else out.print("{d}/? ", .{event.done}) catch return;
+            out.print("elapsed={d:.1}s ", .{@as(f64, @floatFromInt(stats.elapsed_ns)) / 1e9}) catch return;
+            if (stats.eta_seconds) |eta| out.print("eta={d:.1}s ", .{eta}) catch return else out.writeAll("eta=? ") catch return;
+            if (stats.rate) |rate| out.print("rate={d:.1}{s}/s ", .{ rate, event.unit }) catch return;
+            for (event.metrics) |metric| {
+                if (std.math.isFinite(metric.value) and @floor(metric.value) == metric.value) out.print("{s}={d:.0} ", .{ metric.name, metric.value }) catch break else out.print("{s}={d:.5} ", .{ metric.name, metric.value }) catch break;
             }
-            out.print("{d:.0}% {d}/{d} ", .{ 100 * stats.fraction.?, event.done, t }) catch return;
-        } else out.print("{d}/? ", .{event.done}) catch return;
-        out.print("elapsed={d:.1}s ", .{@as(f64, @floatFromInt(stats.elapsed_ns)) / 1e9}) catch return;
-        if (stats.eta_seconds) |eta| out.print("eta={d:.1}s ", .{eta}) catch return else out.writeAll("eta=? ") catch return;
-        if (stats.rate) |rate| out.print("rate={d:.1}{s}/s ", .{ rate, event.unit }) catch return;
-        for (event.metrics) |metric| {
-            if (std.math.isFinite(metric.value) and @floor(metric.value) == metric.value) out.print("{s}={d:.0} ", .{ metric.name, metric.value }) catch break else out.print("{s}={d:.5} ", .{ metric.name, metric.value }) catch break;
+            if (event.detail.len > 0) out.print("{s}", .{event.detail}) catch {};
         }
-        if (event.detail.len > 0) out.print("{s}", .{event.detail}) catch {};
         var line = out.buffered();
         // Do not emit escapes, control bytes or UTF-8; messages remain ASCII.
-        for (line) |*c| if (c.* < 32 or c.* > 126) {
+        for (line) |*c| if ((c.* < 32 and c.* != '\n') or c.* > 126) {
             c.* = '?';
         };
+        if (self.journal) |file| {
+            file.writeStreamingAll(self.io, line) catch {};
+            file.writeStreamingAll(self.io, "\n") catch {};
+        }
         if (self.active and !inplace) std.Io.File.stderr().writeStreamingAll(self.io, "\n") catch {};
         if (inplace) {
             line = fitLine(line, self.width);
@@ -205,6 +248,7 @@ pub const Renderer = struct {
     /// On ordinary error unwinding, finish an in-place line. SIGINT may terminate
     /// without defers; no cursor/colour/terminal mode was changed to restore.
     pub fn deinit(self: *Renderer) void {
+        if (self.journal) |file| file.close(self.io);
         for (&self.slots) |*slot| slot.node.end();
         self.root.end();
         if (self.active) std.Io.File.stderr().writeStreamingAll(self.io, "\n") catch {};

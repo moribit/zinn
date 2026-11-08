@@ -45,8 +45,15 @@ pub fn reusable(a: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, path: []const
     return true;
 }
 pub fn transfer(a: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, path: []const u8, spec: Spec, reader: *std.Io.Reader, content_length: ?u64, observer: progress.Observer) !u64 {
-    var task = observer.task(spec.name, content_length);
-    task.unit = "B";
+    return transferBody(a, io, dir, path, spec, reader, content_length, observer, true);
+}
+/// Continue the file event announced before connecting to the HTTP server.
+pub fn transferContinuing(a: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, path: []const u8, spec: Spec, reader: *std.Io.Reader, content_length: ?u64, observer: progress.Observer) !u64 {
+    return transferBody(a, io, dir, path, spec, reader, content_length, observer, false);
+}
+fn transferBody(a: std.mem.Allocator, io: std.Io, dir: std.Io.Dir, path: []const u8, spec: Spec, reader: *std.Io.Reader, content_length: ?u64, observer: progress.Observer, announce: bool) !u64 {
+    var task: progress.Task = .{ .observer = observer, .name = spec.name, .total = content_length, .unit = "B" };
+    observer.emit(.{ .name = spec.name, .kind = if (announce) .started else .updated, .total = content_length, .unit = "B" });
     errdefer task.fail("operation failed");
     if (content_length) |length| if (length > max_compressed) return error.DownloadTooLarge;
     var atomic = try dir.createFileAtomic(io, path, .{ .replace = true });

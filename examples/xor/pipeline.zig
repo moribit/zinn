@@ -8,7 +8,7 @@ fn log(init: std.process.Init, comptime fmt: []const u8, args: anytype) !void {
 pub fn main(init: std.process.Init) !void {
     const parsed = try z.host.progress.cli(init);
     const args = parsed.args;
-    var renderer = z.host.progress.Renderer.init(init, parsed.mode);
+    var renderer = z.host.progress.Renderer.initJournal(init, parsed.mode, parsed.journal);
     defer renderer.deinit();
     const observer = renderer.observer();
     if (args.len < 3) return error.ExpectedCommandAndPath;
@@ -25,6 +25,7 @@ pub fn main(init: std.process.Init) !void {
         const bytes = model.encode();
         try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[2], .data = &bytes });
         task.finish();
+        try z.host.progress.saveReceipt(init, parsed);
         try log(init, "train: seed={d} epochs={d} MSE={e} correct={d}/4 checkpoint={s}\n", .{ model.seed, model.epochs, evaluation.loss, evaluation.correct, args[2] });
     } else {
         const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, args[2], init.arena.allocator(), .limited(1024 * 1024));

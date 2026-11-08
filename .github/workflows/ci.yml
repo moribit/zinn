@@ -35,6 +35,8 @@ jobs:
             exit 1
           fi
       - run: zig build xor
+      - name: Cached training and live plain progress (offline)
+        run: bash tests/progress_cli.sh zig progress-cli-results
       - run: zig build e2e
       - run: zig build e2e -Dweight-format=int4
       - run: zig build data-train -Dcsv-train=examples/data_classifier/train.csv -Dcsv-test=examples/data_classifier/test.csv -Dweight-format=int4
@@ -81,3 +83,4 @@ jobs:
             size-report.txt
             progress-*.json
             progress-*.log
+            progress-cli-results/

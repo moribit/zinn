@@ -107,8 +107,11 @@ pub fn build(b: *std.Build) void {
     const checkpoint = training.addOutputFileArg("xor.zinn");
     const xor_fit_log = training.captureStdErr(.{});
     const save_checkpoint = b.addInstallFile(checkpoint, "models/xor.zinn");
-    if (selected_project == .xor) train_alias.dependOn(&save_checkpoint.step);
-    if (selected_project == .xor) train_alias.dependOn(&b.addInstallFile(xor_fit_log, "reports/xor-training-progress.log").step);
+    const xor_steps = progress_build.training(b, b, training, progress_mode, "xor", "xor-train", "models/xor.zinn");
+    const xor_backend = xor_steps.backend;
+    xor_backend.dependOn(&save_checkpoint.step);
+    xor_backend.dependOn(&b.addInstallFile(xor_fit_log, "reports/xor-training-progress.log").step);
+    if (selected_project == .xor) train_alias.dependOn(xor_steps.display);
     const eval_run = b.addRunArtifact(pipeline);
     progress_build.configure(eval_run, progress_mode, "Zinn: evaluate XOR");
     eval_run.addArg("eval");
@@ -232,6 +235,7 @@ pub fn build(b: *std.Build) void {
     const download = b.addExecutable(.{ .name = "download-mnist", .root_module = b.createModule(.{ .root_source_file = b.path("tools/download_mnist.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{.{ .name = "zinn", .module = coreModule(b, b.graph.host, .safe) }} }) });
     const download_run = b.addRunArtifact(download);
     progress_build.configure(download_run, progress_mode, "Zinn: download / validate MNIST");
+    download_run.disable_zig_progress = true;
     download_run.addArg(data_dir);
     if (b.option(bool, "download-force", "Explicitly replace even valid MNIST downloads") orelse false) download_run.addArg("--force");
     download_run.has_side_effects = true;
@@ -268,7 +272,7 @@ pub fn build(b: *std.Build) void {
     const save_training_log = b.addInstallFile(mnist_training_log, b.fmt("models/{s}-training.txt", .{model_prefix}));
     const save_mnist_progress = b.addInstallFile(mnist_fit_log, b.fmt("reports/{s}-training-progress.log", .{model_prefix}));
     const save_mnist = b.addInstallFile(mnist_checkpoint, b.fmt("models/{s}.zinn", .{model_prefix}));
-    const mnist_train_step = b.step("mnist-train", "Train MNIST on training split only");
+    const mnist_train_step = progress_build.training(b, b, mnist_training, progress_mode, model_prefix, "mnist-train", b.fmt("models/{s}.zinn", .{model_prefix})).backend;
     mnist_train_step.dependOn(&save_mnist.step);
     mnist_train_step.dependOn(&save_training_log.step);
     mnist_train_step.dependOn(&save_mnist_progress.step);

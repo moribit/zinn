@@ -10,7 +10,10 @@ pub fn main(init: std.process.Init) !void {
     var renderer = progress.Renderer.init(init, parsed.mode);
     defer renderer.deinit();
     const observer = renderer.observer();
-    var overall = observer.task("MNIST files", 4);
+    var overall: progress.Task = .{ .observer = observer, .name = "MNIST", .total = 4, .unit = "files" };
+    observer.emit(.{ .name = "MNIST", .kind = .started, .total = 4, .unit = "files" });
+    var cached: usize = 0;
+    var downloaded: usize = 0;
     errdefer overall.fail("operation failed");
     try std.Io.Dir.cwd().createDirPath(init.io, args[1]);
     var client: std.http.Client = .{ .allocator = init.gpa, .io = init.io };
@@ -23,13 +26,16 @@ pub fn main(init: std.process.Init) !void {
                 break :blk false;
             };
             if (reuse) {
-                observer.emit(.{ .name = spec.name, .kind = .completed, .detail = "reused (gzip/IDX/MD5 validated)" });
+                const stat = try std.Io.Dir.cwd().statFile(init.io, path, .{});
+                observer.emit(.{ .name = spec.name, .kind = .completed, .detail = "cached", .unit = "B", .done = stat.size, .total = stat.size });
+                cached += 1;
                 overall.update(index + 1, &.{});
                 continue;
             }
         }
         const url = try std.fmt.allocPrint(init.arena.allocator(), "https://storage.googleapis.com/cvdf-datasets/mnist/{s}", .{spec.name});
-        var stage = observer.task("HTTP request", null);
+        var stage: progress.Task = .{ .observer = observer, .name = spec.name, .total = null, .unit = "B" };
+        observer.emit(.{ .name = spec.name, .kind = .started, .unit = "B" });
         errdefer stage.fail("operation failed");
         var request = try client.request(.GET, try std.Uri.parse(url), .{ .headers = .{ .accept_encoding = .{ .override = "identity" } } });
         defer request.deinit();
@@ -42,13 +48,14 @@ pub fn main(init: std.process.Init) !void {
         }
         try download.checkResponse(response.head.status, response.head.content_encoding);
         const length = response.head.content_length;
-        stage.finish();
+        stage.terminal = true; // The body transfer owns completion/failure now.
         var buffer: [64 * 1024]u8 = undefined;
-        _ = download.transfer(init.gpa, init.io, .cwd(), path, spec, response.reader(&buffer), length, observer) catch |err| {
+        _ = download.transferContinuing(init.gpa, init.io, .cwd(), path, spec, response.reader(&buffer), length, observer) catch |err| {
             std.debug.print("MNIST {s}: download/validation failed: {s}; destination was not replaced\n", .{ spec.name, @errorName(err) });
             return err;
         };
+        downloaded += 1;
         overall.update(index + 1, &.{});
     }
-    overall.finish();
+    overall.finishWithMetrics(&.{ .{ .name = "downloaded", .value = @floatFromInt(downloaded) }, .{ .name = "cached", .value = @floatFromInt(cached) } });
 }
