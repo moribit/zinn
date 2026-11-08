@@ -1,11 +1,16 @@
 pub const addProject = @import("build_support/project.zig").addProject;
 pub const ProjectOptions = @import("build_support/project.zig").Options;
+pub const ProgressMode = @import("build_support/progress.zig").Mode;
 const std = @import("std");
 const ch32 = @import("ch32fun_zig");
+const progress_build = @import("build_support/progress.zig");
 fn coreModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.lang.Optimize) *std.Build.Module {
     return b.createModule(.{ .root_source_file = b.path("src/root.zig"), .target = target, .optimize = optimize });
 }
 pub fn build(b: *std.Build) void {
+    const requested_progress = b.option(progress_build.Mode, "progress", "Host progress: auto, plain or off") orelse .auto;
+    const quiet = b.option(bool, "quiet", "Disable Zinn progress (reports/errors remain)") orelse false;
+    const progress_mode = if (quiet) .off else requested_progress;
     const target_name = b.option([]const u8, "target", "ch32v003 or a Zig target triple") orelse "native";
     const cpu = b.option([]const u8, "cpu", "Target CPU features");
     const ofmt = b.option([]const u8, "ofmt", "Target object format");
@@ -18,6 +23,15 @@ pub fn build(b: *std.Build) void {
     const evaluate_alias = b.step("evaluate", "Evaluate selected project");
     const core = b.addModule("zinn", .{ .root_source_file = b.path("src/root.zig"), .target = target, .optimize = optimize });
     const host_core = coreModule(b, b.graph.host, optimize);
+    const progress_tools = b.step("progress-tools", "Install optional host progress fixture and overhead benchmark");
+    inline for (.{ .{ "progress-demo", "tools/progress_demo.zig" }, .{ "progress-benchmark", "tools/progress_bench.zig" } }) |spec| {
+        const exe = b.addExecutable(.{ .name = spec[0], .root_module = b.createModule(.{ .root_source_file = b.path(spec[1]), .target = b.graph.host, .optimize = .safe, .imports = &.{.{ .name = "zinn", .module = coreModule(b, b.graph.host, .safe) }} }) });
+        const run = b.addRunArtifact(exe);
+        progress_build.configure(run, progress_mode, spec[0]);
+        run.addPassthruArgs();
+        b.step(spec[0], "Host-only progress fixture / overhead measurement").dependOn(&run.step);
+        progress_tools.dependOn(&b.addInstallArtifact(exe, .{}).step);
+    }
     const docs_check = b.step("docs-check", "Check offline Markdown links and executable API examples");
     const doc_links = b.addExecutable(.{ .name = "docs-check", .root_module = b.createModule(.{ .root_source_file = b.path("tools/docs_check.zig"), .target = b.graph.host, .optimize = .safe }) });
     const doc_run = b.addRunArtifact(doc_links);
@@ -88,22 +102,31 @@ pub fn build(b: *std.Build) void {
     xor_fit_options.addOption(bool, "int4", false);
     const xor_fit = b.addExecutable(.{ .name = "zinn-xor-fit", .root_module = b.createModule(.{ .root_source_file = b.path("examples/xor/pipeline.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{ .{ .name = "zinn", .module = host_core }, .{ .name = "dataset_options", .module = xor_fit_options.createModule() } } }) });
     const training = b.addRunArtifact(xor_fit);
+    progress_build.configure(training, progress_mode, "Zinn: train XOR");
     training.addArg("train");
     const checkpoint = training.addOutputFileArg("xor.zinn");
+    const xor_fit_log = training.captureStdErr(.{});
     const save_checkpoint = b.addInstallFile(checkpoint, "models/xor.zinn");
     if (selected_project == .xor) train_alias.dependOn(&save_checkpoint.step);
+    if (selected_project == .xor) train_alias.dependOn(&b.addInstallFile(xor_fit_log, "reports/xor-training-progress.log").step);
     const eval_run = b.addRunArtifact(pipeline);
+    progress_build.configure(eval_run, progress_mode, "Zinn: evaluate XOR");
     eval_run.addArg("eval");
     const model_path = b.option([]const u8, "checkpoint", "Existing XOR .zinn checkpoint (otherwise train automatically)");
     if (model_path) |path| eval_run.addFileArg(b.path(path)) else eval_run.addFileArg(checkpoint);
     b.step("eval", "Evaluate saved float XOR model").dependOn(&eval_run.step);
     if (selected_project == .xor) evaluate_alias.dependOn(&eval_run.step);
     const quantize = b.addRunArtifact(pipeline);
+    progress_build.configure(quantize, progress_mode, "Zinn: calibrate / export XOR");
     quantize.addArg("quantize");
     if (model_path) |path| quantize.addFileArg(b.path(path)) else quantize.addFileArg(checkpoint);
     const source = quantize.addOutputFileArg("xor.zig");
     const save_source = b.addInstallFile(source, "models/xor.zig");
-    b.step("quantize", "Calibrate and emit zig-out/models/xor.zig").dependOn(&save_source.step);
+    const xor_export_log = quantize.captureStdErr(.{});
+    const save_xor_export_log = b.addInstallFile(xor_export_log, "reports/xor-export-progress.log");
+    const quantize_step = b.step("quantize", "Calibrate and emit zig-out/models/xor.zig");
+    quantize_step.dependOn(&save_source.step);
+    quantize_step.dependOn(&save_xor_export_log.step);
     const generated = b.createModule(.{ .root_source_file = source, .target = b.graph.host, .optimize = optimize });
     generated.addImport("zinn", host_core);
     const verify = b.addExecutable(.{ .name = "verify-trained-xor", .root_module = b.createModule(.{
@@ -117,6 +140,7 @@ pub fn build(b: *std.Build) void {
     e2e.dependOn(&eval_run.step);
     e2e.dependOn(&save_checkpoint.step);
     e2e.dependOn(&save_source.step);
+    e2e.dependOn(&save_xor_export_log.step);
     const csv_features = b.option(usize, "features", "CSV feature count") orelse 2;
     const csv_classes = b.option(usize, "classes", "CSV class count") orelse 2;
     const csv_hidden = b.option(usize, "hidden", "CSV classifier hidden units") orelse 8;
@@ -139,11 +163,14 @@ pub fn build(b: *std.Build) void {
     csv_options.addOption(bool, "int4", weight_format == .int4);
     const csv_tool = b.addExecutable(.{ .name = "zinn-data", .root_module = b.createModule(.{ .root_source_file = b.path("examples/data_classifier/main.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{ .{ .name = "zinn", .module = coreModule(b, b.graph.host, .safe) }, .{ .name = "csv_options", .module = csv_options.createModule() } } }) });
     const csv_run = b.addRunArtifact(csv_tool);
+    progress_build.configure(csv_run, progress_mode, "Zinn: CSV training / evaluation / export");
     csv_run.addFileArg(.{ .cwd_relative = csv_train_path });
     csv_run.addFileArg(.{ .cwd_relative = csv_test_path });
     const csv_checkpoint = csv_run.addOutputFileArg("classifier.zinn");
     const csv_source = csv_run.addOutputFileArg("classifier.zig");
+    const csv_log = csv_run.captureStdErr(.{});
     const csv_step = b.step("data-train", "Train/evaluate/export CSV classifier using -Dcsv-train and -Dcsv-test");
+    csv_step.dependOn(&b.addInstallFile(csv_log, "reports/classifier-progress.log").step);
     csv_step.dependOn(&b.addInstallFile(csv_checkpoint, "models/classifier.zinn").step);
     csv_step.dependOn(&b.addInstallFile(csv_source, "models/classifier.zig").step);
     const csv_core = coreModule(b, b.graph.host, .safe);
@@ -202,9 +229,11 @@ pub fn build(b: *std.Build) void {
     }) });
     const data_dir = b.option([]const u8, "data-dir", "Directory containing official MNIST IDX(.gz) files") orelse "data/mnist";
     const names = [_][]const u8{ "train-images-idx3-ubyte.gz", "train-labels-idx1-ubyte.gz", "t10k-images-idx3-ubyte.gz", "t10k-labels-idx1-ubyte.gz" };
-    const download = b.addExecutable(.{ .name = "download-mnist", .root_module = b.createModule(.{ .root_source_file = b.path("tools/download_mnist.zig"), .target = b.graph.host, .optimize = .safe }) });
+    const download = b.addExecutable(.{ .name = "download-mnist", .root_module = b.createModule(.{ .root_source_file = b.path("tools/download_mnist.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{.{ .name = "zinn", .module = coreModule(b, b.graph.host, .safe) }} }) });
     const download_run = b.addRunArtifact(download);
+    progress_build.configure(download_run, progress_mode, "Zinn: download / validate MNIST");
     download_run.addArg(data_dir);
+    if (b.option(bool, "download-force", "Explicitly replace even valid MNIST downloads") orelse false) download_run.addArg("--force");
     download_run.has_side_effects = true;
     b.step("mnist-download", "Explicitly download the four official MNIST gzip files").dependOn(&download_run.step);
     const fit_options = b.addOptions();
@@ -229,19 +258,24 @@ pub fn build(b: *std.Build) void {
     fit_model.addImport("dataset_options", fit_config);
     const mnist_fit = b.addExecutable(.{ .name = "zinn-mnist-fit", .root_module = b.createModule(.{ .root_source_file = b.path("examples/mnist/pipeline.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{ .{ .name = "zinn", .module = pipeline_core }, .{ .name = "dataset_options", .module = fit_config }, .{ .name = "project_model", .module = fit_model } } }) });
     const mnist_training = b.addRunArtifact(mnist_fit);
+    progress_build.configure(mnist_training, progress_mode, "Zinn: train MNIST");
     mnist_training.addArg("train");
     for (names[0..2]) |name| mnist_training.addFileArg(if (use_fixture) fixture_dir.path(b, name) else .{ .cwd_relative = b.pathJoin(&.{ data_dir, name }) });
     mnist_training.addArgs(&.{ b.fmt("{d}", .{user_epochs orelse 10}), b.fmt("{d}", .{train_limit}), b.fmt("{d}", .{batch_size}), learning_rate, b.fmt("{d}", .{training_seed}) });
     const mnist_checkpoint = mnist_training.addOutputFileArg("mnist.zinn");
     const mnist_training_log = mnist_training.captureStdOut(.{});
+    const mnist_fit_log = mnist_training.captureStdErr(.{});
     const save_training_log = b.addInstallFile(mnist_training_log, b.fmt("models/{s}-training.txt", .{model_prefix}));
+    const save_mnist_progress = b.addInstallFile(mnist_fit_log, b.fmt("reports/{s}-training-progress.log", .{model_prefix}));
     const save_mnist = b.addInstallFile(mnist_checkpoint, b.fmt("models/{s}.zinn", .{model_prefix}));
     const mnist_train_step = b.step("mnist-train", "Train MNIST on training split only");
     mnist_train_step.dependOn(&save_mnist.step);
     mnist_train_step.dependOn(&save_training_log.step);
+    mnist_train_step.dependOn(&save_mnist_progress.step);
     const calibration_limit = b.option(usize, "calibration-limit", "Train-only calibration samples") orelse 1024;
     const test_limit = b.option(usize, "test-limit", "Held-out test samples") orelse 10000;
     const mnist_export = b.addRunArtifact(mnist_tool);
+    progress_build.configure(mnist_export, progress_mode, "Zinn: evaluate / calibrate / export MNIST");
     mnist_export.addArg("export");
     const app_checkpoint = b.option([]const u8, "project-checkpoint", "Selected project checkpoint (v1)");
     const input_bin = b.option([]const u8, "input-bin", "Optional raw quantized input bytes for host/UART replay");
@@ -258,6 +292,7 @@ pub fn build(b: *std.Build) void {
     mnist_export.addArgs(&.{ b.fmt("{d}", .{calibration_limit}), b.fmt("{d}", .{test_limit}) });
     const mnist_source = mnist_export.addOutputFileArg("mnist.zig");
     const mnist_report = mnist_export.addOutputFileArg("mnist-report.txt");
+    const mnist_export_progress = mnist_export.captureStdErr(.{});
     const save_mnist_source = b.addInstallFile(mnist_source, b.fmt("models/{s}-{s}.zig", .{ model_prefix, @tagName(weight_format) }));
     const save_mnist_report = b.addInstallFile(mnist_report, b.fmt("models/{s}-{s}-report.txt", .{ model_prefix, @tagName(weight_format) }));
     const mnist_eval = b.step("mnist-eval", "Evaluate held-out split and export calibrated model");
@@ -271,8 +306,11 @@ pub fn build(b: *std.Build) void {
     verify_model.addImport("dataset_options", dataset_config);
     const mnist_verify = b.addExecutable(.{ .name = "verify-mnist", .root_module = b.createModule(.{ .root_source_file = b.path("examples/mnist/verify.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{ .{ .name = "trained_model", .module = mnist_model }, .{ .name = "zinn", .module = mnist_core }, .{ .name = "dataset_options", .module = dataset_config }, .{ .name = "project_model", .module = verify_model } } }) });
     const mnist_e2e = b.step("mnist", "Train/evaluate/export and verify generated MNIST integer inference");
+    mnist_e2e.dependOn(&b.addInstallFile(mnist_export_progress, b.fmt("reports/{s}-export-progress.log", .{model_prefix})).step);
+    if (mnist_model_path == null) mnist_e2e.dependOn(&save_mnist_progress.step);
     if (mnist_model_path == null) mnist_e2e.dependOn(&save_mnist.step);
     const mnist_verify_run = b.addRunArtifact(mnist_verify);
+    progress_build.configure(mnist_verify_run, progress_mode, "Zinn: integer reference verification MNIST");
     if (mnist_model_path) |path| mnist_verify_run.addFileArg(.{ .cwd_relative = path }) else mnist_verify_run.addFileArg(mnist_checkpoint);
     for (names, 0..) |source_name, i| {
         const name = if (evaluation == .validation and i >= 2) names[i - 2] else source_name;
@@ -285,6 +323,7 @@ pub fn build(b: *std.Build) void {
     _ = core;
     if (b.lazyDependency("ch32fun_zig", .{})) |dep| {
         const size_tool = b.addExecutable(.{ .name = "size", .root_module = b.createModule(.{ .root_source_file = b.path("tools/size.zig"), .target = b.graph.host, .optimize = .safe }) });
+        size_tool.root_module.addImport("progress", b.createModule(.{ .root_source_file = b.path("src/host/progress.zig"), .target = b.graph.host, .optimize = .safe }));
         size_tool.root_module.addImport("budget", b.createModule(.{ .root_source_file = b.path("src/budget.zig"), .target = b.graph.host, .optimize = .safe }));
         const flash_budget = b.option(u32, "flash-bytes", "Physical Flash budget") orelse 16384;
         const ram_budget = b.option(u32, "ram-bytes", "Physical SRAM budget") orelse 2048;
@@ -301,6 +340,7 @@ pub fn build(b: *std.Build) void {
         const mnist_fw_step = b.step("mnist-firmware", "Cross-build generated MNIST for CH32V003 and check final capacity");
         mnist_fw_step.dependOn(&b.addInstallArtifact(mnist_fw, .{}).step);
         const mnist_size = b.addRunArtifact(size_tool);
+        progress_build.configure(mnist_size, progress_mode, "Zinn: memory budget verification MNIST");
         mnist_size.addFileArg(mnist_fw.getEmittedBin());
         mnist_size.addArgs(&.{ b.fmt("{d}", .{flash_budget}), b.fmt("{d}", .{ram_budget}), b.fmt("{d}", .{stack_budget}), b.fmt("{d}", .{reserved}) });
         const mnist_json = mnist_size.captureStdOut(.{});
@@ -338,6 +378,7 @@ pub fn build(b: *std.Build) void {
             const install = b.addInstallArtifact(fw, .{});
             b.step(spec[0], "Cross-build CH32V003 firmware").dependOn(&install.step);
             const run_size = b.addRunArtifact(size_tool);
+            progress_build.configure(run_size, progress_mode, b.fmt("Zinn: memory budget verification {s}", .{spec[1]}));
             run_size.addFileArg(fw.getEmittedBin());
             run_size.addArgs(&.{ b.fmt("{d}", .{flash_budget}), b.fmt("{d}", .{ram_budget}), b.fmt("{d}", .{stack_budget}), b.fmt("{d}", .{reserved}) });
             const json = run_size.captureStdOut(.{});
@@ -357,6 +398,7 @@ pub fn build(b: *std.Build) void {
             const configured_model = b.path(b.option([]const u8, "model", "Custom model module exporting Structure") orelse (if (csv) "examples/data_classifier/project_model.zig" else "examples/mnist/project_model.zig"));
             const project_name = b.option([]const u8, "app-name", "Common workflow artifact name") orelse (if (csv) "classifier" else "mnist-uart");
             if (addProject(b, null, .{
+                .progress = progress_mode,
                 .name = project_name,
                 .model = configured_model,
                 .step_prefix = "app-",

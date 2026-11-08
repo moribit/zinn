@@ -2,6 +2,8 @@
 
 Use Zig0.17.0 from the checkout root. This tutorial separates a quick offline integration check from real fitting and physical operations. Default models are MLP16/CNN2, not the larger benchmark candidates.
 
+[Progress controls](../progress.md): -Dprogress=auto|plain|off, or -Dquiet=true. Training reports epoch/batch/loss/validation/lr/best selection without extra forward passes; CSV curves remain unchanged. Build training/export logs are saved under reports. Downloads stream to validated atomic temporaries, reuse valid files and support explicit -Ddownload-force=true. Missing Content-Length is supported without a guessed percentage.
+
 ## Offline integration — no board or download
 
 ```sh

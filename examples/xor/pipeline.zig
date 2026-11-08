@@ -6,26 +6,38 @@ fn log(init: std.process.Init, comptime fmt: []const u8, args: anytype) !void {
     try std.Io.File.stdout().writeStreamingAll(init.io, message);
 }
 pub fn main(init: std.process.Init) !void {
-    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    const parsed = try z.host.progress.cli(init);
+    const args = parsed.args;
+    var renderer = z.host.progress.Renderer.init(init, parsed.mode);
+    defer renderer.deinit();
+    const observer = renderer.observer();
     if (args.len < 3) return error.ExpectedCommandAndPath;
     var model = d.Training.init(42);
     if (std.mem.eql(u8, args[1], "train")) {
-        for (0..10000) |_| _ = try model.trainEpoch(&d.samples, 0.05);
+        var task = observer.task("XOR training", 10000);
+        errdefer task.fail("XOR training failed");
+        for (0..10000) |epoch| {
+            const loss = try model.trainEpoch(&d.samples, 0.05);
+            if (epoch % 64 == 0 or epoch == 9999) task.update(epoch + 1, &.{ .{ .name = "epoch", .value = @floatFromInt(epoch + 1) }, .{ .name = "loss", .value = loss }, .{ .name = "lr", .value = 0.05 } });
+        }
         const evaluation = try model.evaluate(&d.samples);
         if (evaluation.correct != 4 or evaluation.loss > 0.001) return error.TrainingDidNotConverge;
         const bytes = model.encode();
         try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[2], .data = &bytes });
+        task.finish();
         try log(init, "train: seed={d} epochs={d} MSE={e} correct={d}/4 checkpoint={s}\n", .{ model.seed, model.epochs, evaluation.loss, evaluation.correct, args[2] });
     } else {
         const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, args[2], init.arena.allocator(), .limited(1024 * 1024));
         try model.decode(bytes);
-        const evaluation = try model.evaluate(&d.samples);
+        const evaluation = try model.evaluateObserved(&d.samples, .mse, observer);
         if (std.mem.eql(u8, args[1], "eval")) {
             try log(init, "eval: MSE={e} correct={d}/4 (XOR truth table, not held-out accuracy)\n", .{ evaluation.loss, evaluation.correct });
             if (evaluation.correct != 4) return error.EvaluationFailed;
         } else if (std.mem.eql(u8, args[1], "quantize")) {
             if (args.len != 4) return error.ExpectedSourceOutput;
-            const quantized = try z.export_model.QuantizedFormat(d.Structure, if (@import("dataset_options").int4) .int4 else .int8).calibrate(&model, &d.samples);
+            const quantized = try z.export_model.QuantizedFormat(d.Structure, if (@import("dataset_options").int4) .int4 else .int8).calibrateObserved(&model, &d.samples, observer);
+            var task = observer.task("Source export", null);
+            errdefer task.fail("source export failed");
             var output: std.Io.Writer.Allocating = .init(init.arena.allocator());
             try quantized.writeSource(&output.writer);
             // Golden vectors are produced by the independently accumulated host reference.
@@ -43,6 +55,7 @@ pub fn main(init: std.process.Init) !void {
             }
             try output.writer.writeAll("};\n");
             try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[3], .data = output.written() });
+            task.finish();
             try log(init, "quantize: int8 reference 4/4; source={s}\n", .{args[3]});
         } else return error.UnknownCommand;
     }

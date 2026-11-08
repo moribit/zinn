@@ -2,6 +2,8 @@
 
 Host only. [Trainer source](../../src/train.zig), [fit](../../src/fit.zig), [data](../../src/data.zig), [executable examples](../../examples/docs/api.zig).
 
+Additive observed variants and fit.Options.observer/model_name are documented in [host progress](../progress.md). Old methods/signatures remain available with observation disabled by default; callbacks do not cause extra evaluation passes or change checkpoint v1.
+
 ## Trainer
 
 `Trainer(comptime S:type) type` returns parameters:[S.parameter_count]f32, seed:u32, epochs:u32, and Sample `{input:[S.input_len]f32,target:[S.output_len]f32}`. No implicit dataset allocation; training does use large local activation/gradient arrays, unsuitable for MCU stacks.

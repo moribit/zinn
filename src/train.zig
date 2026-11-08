@@ -1,6 +1,7 @@
 //! Host-only float32 SGD training; inference does not import this module.
 const std = @import("std");
 const spatial = @import("spatial.zig");
+const progress = @import("host/progress.zig");
 pub const Evaluation = struct { loss: f32, correct: usize };
 pub const Loss = enum { mse, cross_entropy };
 pub fn checksum(data: []const u8) u64 {
@@ -135,11 +136,16 @@ pub fn Trainer(comptime S: type) type {
             return self.evaluateWithLoss(samples, .mse);
         }
         pub fn evaluateWithLoss(self: *const Self, samples: []const Sample, loss_kind: Loss) !Evaluation {
+            return self.evaluateObserved(samples, loss_kind, .{});
+        }
+        pub fn evaluateObserved(self: *const Self, samples: []const Sample, loss_kind: Loss, observer: progress.Observer) !Evaluation {
+            var task = observer.task("Float evaluation", samples.len);
+            errdefer task.fail("operation failed");
             if (samples.len == 0) return error.EmptyDataset;
             for (self.parameters) |value| if (!std.math.isFinite(value)) return error.NonFiniteParameters;
             var loss: f32 = 0;
             var correct: usize = 0;
-            for (samples) |sample| {
+            for (samples, 0..) |sample, index| {
                 for (sample.input) |value| if (!std.math.isFinite(value)) return error.NonFiniteInput;
                 const prediction = self.predict(&sample.input);
                 var predicted: usize = 0;
@@ -158,8 +164,10 @@ pub fn Trainer(comptime S: type) type {
                     loss += if (loss_kind == .mse) d * d / @as(f32, @floatFromInt(S.output_len)) else -sample.target[i] * (value - maximum - @log(exp_sum));
                 }
                 correct += @intFromBool(predicted == target);
+                if (index % 256 == 0 or index + 1 == samples.len) task.update(index + 1, &.{});
             }
             if (!std.math.isFinite(loss)) return error.NonFiniteEvaluation;
+            task.finish();
             return .{ .loss = loss / @as(f32, @floatFromInt(samples.len)), .correct = correct };
         }
         pub fn encode(self: *const Self) [checkpoint_len]u8 {

@@ -19,6 +19,21 @@ jobs:
       - run: zig build docs-check
       - run: zig build test --summary all 2>&1 | tee test-results-debug.txt
       - run: zig build test -Doptimize=safe --summary all 2>&1 | tee test-results-safe.txt
+      - name: Offline progress display and redirected output
+        run: |
+          set -euo pipefail
+          zig build progress-tools
+          ./zig-out/bin/progress-demo --progress=plain > progress-plain.json 2> progress-plain.log
+          ./zig-out/bin/progress-demo --quiet > progress-off.json 2> progress-off.log
+          CI=true TERM=dumb LC_ALL=C ./zig-out/bin/progress-demo --progress=auto > progress-ci.json 2> progress-ci.log
+          cmp progress-plain.json progress-off.json
+          cmp progress-plain.json progress-ci.json
+          test ! -s progress-off.log
+          test -s progress-plain.log
+          if ./zig-out/bin/progress-demo --progress=plain --fail > progress-fail.json 2> progress-fail.log; then
+            echo "Expected failing progress fixture"
+            exit 1
+          fi
       - run: zig build xor
       - run: zig build e2e
       - run: zig build e2e -Dweight-format=int4
@@ -64,3 +79,5 @@ jobs:
             examples/project/zig-out/reports/
             test-results-*.txt
             size-report.txt
+            progress-*.json
+            progress-*.log

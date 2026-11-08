@@ -51,6 +51,8 @@ zig build deploy               # XOR ELF/bin生成・容量検査。書き込み
 
 成果物の詳細は[Getting Started](docs/getting-started.md)。標準の技術文書は英語です。
 
+ホストの進捗表示はstderrに出力します。`-Dprogress=plain`でログ表示、`-Dquiet=true`で無効化できます。キャッシュ可能なBuild処理の詳細はログへ保存し、autoではZigのUIにも実際の処理数を通知します。[設定とBuildの制約](docs/progress.md)を参照してください。
+
 ## 共通モデル定義
 
 <!-- zinn-api-sample -->

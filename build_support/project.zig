@@ -1,5 +1,6 @@
 const std = @import("std");
 const ch32 = @import("ch32fun_zig");
+const progress = @import("progress.zig");
 pub const Format = enum { int8, int4 };
 pub const Evaluation = enum { validation, final_test };
 pub const Dataset = union(enum) {
@@ -8,6 +9,7 @@ pub const Dataset = union(enum) {
 };
 pub const Training = struct { epochs: usize = 20, batch: usize = 32, rate: f32 = 0.05, seed: u32 = 42, split_seed: u32 = 24301, validation_count: ?usize = null, decay_every: usize = 10, decay: f32 = 0.3, limit: usize = 60000 };
 pub const Options = struct {
+    progress: progress.Mode = .auto,
     name: []const u8,
     model: std.Build.LazyPath,
     dataset: Dataset,
@@ -61,6 +63,7 @@ fn settings(b: *std.Build, options: Options, validation_count: usize, final_test
     config.addOption(bool, "nearest", options.nearest);
     config.addOption(bool, "int4", !training and options.format == .int4);
     config.addOption(bool, "report_json", true);
+    config.addOption([]const u8, "model_name", b.fmt("{s} training", .{options.name}));
     config.addOption(bool, "evaluation_test", !training and final_test);
     config.addOption(usize, "train_limit", options.training.limit);
     config.addOption(usize, "validation_count", validation_count);
@@ -95,16 +98,20 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     const pipeline = b.addExecutable(.{ .name = b.fmt("{s}-pipeline", .{options.name}), .root_module = b.createModule(.{ .root_source_file = pkg.path("examples/mnist/pipeline.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{ .{ .name = "zinn", .module = core }, .{ .name = "dataset_options", .module = opts }, .{ .name = "project_model", .module = projectModel(b, options.model, core, opts) } } }) });
     const fit_tool = b.addExecutable(.{ .name = b.fmt("{s}-fit", .{options.name}), .root_module = b.createModule(.{ .root_source_file = pkg.path("examples/mnist/pipeline.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{ .{ .name = "zinn", .module = core }, .{ .name = "dataset_options", .module = training_opts }, .{ .name = "project_model", .module = projectModel(b, options.model, core, training_opts) } } }) });
     const fitting = b.addRunArtifact(fit_tool);
+    progress.configure(fitting, options.progress, b.fmt("Zinn: train {s}", .{options.name}));
     fitting.addArg("train");
     for (train_files) |file| fitting.addFileArg(file);
     fitting.addArgs(&.{ b.fmt("{d}", .{options.training.epochs}), b.fmt("{d}", .{options.training.limit}), b.fmt("{d}", .{options.training.batch}), b.fmt("{d}", .{options.training.rate}), b.fmt("{d}", .{options.training.seed}) });
     const checkpoint = fitting.addOutputFileArg(b.fmt("{s}.zinn", .{options.name}));
     const curve = fitting.captureStdOut(.{});
+    const fit_log = fitting.captureStdErr(.{});
     const train = b.step(b.fmt("{s}train", .{options.step_prefix}), "Train/save model and validation curve");
     train.dependOn(&b.addInstallFile(checkpoint, b.fmt("training/{s}.zinn", .{options.name})).step);
     train.dependOn(&b.addInstallFile(curve, b.fmt("reports/{s}-training.csv", .{options.name})).step);
+    train.dependOn(&b.addInstallFile(fit_log, b.fmt("reports/{s}-training-progress.log", .{options.name})).step);
     const selected = options.checkpoint orelse checkpoint;
     const exporting = b.addRunArtifact(pipeline);
+    progress.configure(exporting, options.progress, b.fmt("Zinn: evaluate / calibrate / export {s}", .{options.name}));
     exporting.addArg("export");
     exporting.addFileArg(selected);
     for (train_files) |file| exporting.addFileArg(file);
@@ -113,13 +120,16 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     const source = exporting.addOutputFileArg(b.fmt("{s}.zig", .{options.name}));
     const metadata = exporting.addOutputFileArg(b.fmt("{s}.json", .{options.name}));
     _ = exporting.captureStdOut(.{});
+    const export_log = exporting.captureStdErr(.{});
     const evaluate = b.step(b.fmt("{s}evaluate", .{options.step_prefix}), "Evaluate selected split and emit integer model/metadata");
     evaluate.dependOn(&b.addInstallFile(source, b.fmt("models/{s}-{s}.zig", .{ options.name, @tagName(options.format) })).step);
     evaluate.dependOn(&b.addInstallFile(metadata, b.fmt("reports/{s}-model.json", .{options.name})).step);
+    evaluate.dependOn(&b.addInstallFile(export_log, b.fmt("reports/{s}-export-progress.log", .{options.name})).step);
     const generated = b.createModule(.{ .root_source_file = source, .target = b.graph.host, .optimize = .safe });
     generated.addImport("zinn", core);
     const verify = b.addExecutable(.{ .name = b.fmt("{s}-verify", .{options.name}), .root_module = b.createModule(.{ .root_source_file = pkg.path("examples/mnist/verify.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{ .{ .name = "zinn", .module = core }, .{ .name = "dataset_options", .module = opts }, .{ .name = "project_model", .module = projectModel(b, options.model, core, opts) }, .{ .name = "trained_model", .module = generated } } }) });
     const verification = b.addRunArtifact(verify);
+    progress.configure(verification, options.progress, b.fmt("Zinn: integer reference verification {s}", .{options.name}));
     verification.addFileArg(selected);
     for (train_files) |file| verification.addFileArg(file);
     for (eval_files) |file| verification.addFileArg(file);
@@ -127,6 +137,7 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     evaluate.dependOn(&verification.step);
     const fw = ch32.addFirmware(b, hal, .{ .name = options.name, .root_source_file = options.firmware orelse pkg.path("examples/mnist/uart.zig") });
     fw.root_module.strip = false;
+    fw.step.name = b.fmt("Zinn: firmware build {s}", .{options.name});
     const fw_core = module(b, pkg, ch32.ch32Target(b), .small);
     const fw_model = b.createModule(.{ .root_source_file = source, .target = ch32.ch32Target(b), .optimize = .small });
     fw_model.addImport("zinn", fw_core);
@@ -143,6 +154,8 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     deploy.dependOn(&b.addInstallFile(binary.getOutput(), b.fmt("firmware/{s}.bin", .{options.name})).step);
     const size_tool = b.addExecutable(.{ .name = b.fmt("{s}-size", .{options.name}), .root_module = b.createModule(.{ .root_source_file = pkg.path("tools/size.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{.{ .name = "budget", .module = b.createModule(.{ .root_source_file = pkg.path("src/budget.zig"), .target = b.graph.host, .optimize = .safe }) }} }) });
     const size = b.addRunArtifact(size_tool);
+    size_tool.root_module.addImport("progress", b.createModule(.{ .root_source_file = pkg.path("src/host/progress.zig"), .target = b.graph.host, .optimize = .safe }));
+    progress.configure(size, options.progress, b.fmt("Zinn: memory budget verification {s}", .{options.name}));
     size.addFileArg(fw.getEmittedBin());
     size.addArgs(&.{ b.fmt("{d}", .{options.flash_bytes}), b.fmt("{d}", .{options.ram_bytes}), b.fmt("{d}", .{options.stack_bytes}), b.fmt("{d}", .{options.reserved_flash_bytes}) });
     const size_json = size.captureStdOut(.{});

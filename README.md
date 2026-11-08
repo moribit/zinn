@@ -55,6 +55,8 @@ zig build deploy               # XOR ELF/bin + capacity check; NEVER flashes
 
 [Getting Started](docs/getting-started.md) explains the artifacts and the boundary between firmware generation and physical flashing.
 
+Host tools report progress on stderr. Use `-Dprogress=plain` for logs or `-Dquiet=true` to disable it. Cached Build phases save detailed progress logs; auto can publish task updates to Zig's own UI. See [progress controls and Build limitations](docs/progress.md).
+
 ## Define the model once
 
 <!-- zinn-api-sample -->

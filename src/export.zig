@@ -35,11 +35,16 @@ pub fn QuantizedFormat(comptime S: type, comptime format: @import("packed.zig").
         params: [S.layer_count]q.Params = undefined,
         scales: [S.layer_count + 1]f32 = undefined,
         pub fn calibrate(model: *const train.Trainer(S), samples: []const train.Trainer(S).Sample) !Self {
+            return calibrateObserved(model, samples, .{});
+        }
+        pub fn calibrateObserved(model: *const train.Trainer(S), samples: []const train.Trainer(S).Sample, observer: @import("host/progress.zig").Observer) !Self {
+            var task = observer.task("Calibration", samples.len);
+            errdefer task.fail("operation failed");
             if (samples.len == 0) return error.EmptyCalibration;
             var result: Self = .{};
             var maxima: [S.layer_count + 1]f32 = @splat(0);
             for (model.parameters) |v| if (!std.math.isFinite(v)) return error.NonFiniteParameters;
-            for (samples) |sample| {
+            for (samples, 0..) |sample, index| {
                 for (sample.input) |v| if (!std.math.isFinite(v)) return error.NonFiniteInput;
                 var a: train.Trainer(S).Activations = undefined;
                 model.forward(&sample.input, &a);
@@ -47,6 +52,7 @@ pub fn QuantizedFormat(comptime S: type, comptime format: @import("packed.zig").
                     if (!std.math.isFinite(v)) return error.NonFiniteActivation;
                     maxima[l] = @max(maxima[l], @abs(v));
                 };
+                if (index % 128 == 0 or index + 1 == samples.len) task.update(index + 1, &.{});
             }
             for (&result.scales, maxima) |*scale, maximum| {
                 scale.* = if (maximum == 0) 1.0 / 127.0 else maximum / 127.0;
@@ -80,6 +86,7 @@ pub fn QuantizedFormat(comptime S: type, comptime format: @import("packed.zig").
                     }
                 }
             }
+            task.finish();
             return result;
         }
         /// Independently accumulated int64/division reference, not the integer core.

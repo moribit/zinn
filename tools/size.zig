@@ -1,7 +1,13 @@
 const std = @import("std");
 const budget = @import("budget");
+const progress = @import("progress");
 pub fn main(init: std.process.Init) !void {
-    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    const parsed = try progress.cli(init);
+    const args = parsed.args;
+    var renderer = progress.Renderer.init(init, parsed.mode);
+    defer renderer.deinit();
+    var task = renderer.observer().task("Memory budget verification", null);
+    errdefer task.fail("ELF memory verification failed");
     if (args.len != 2 and args.len != 6) return error.ExpectedElfAndOptionalFlashRamStackReserved;
     var target: budget.Target = .{};
     if (args.len == 6) {
@@ -29,4 +35,5 @@ pub fn main(init: std.process.Init) !void {
         .hardware_measured = false,
     }, .{});
     try std.Io.File.stdout().writeStreamingAll(init.io, json);
+    task.finish();
 }

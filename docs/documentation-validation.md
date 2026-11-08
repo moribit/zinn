@@ -8,6 +8,8 @@ Scope limits: this is a small repository-specific checker, not a full CommonMark
 
 ## Validation record — 2026-11-08
 
+This section records the OSS documentation pass at36b73ec, before the progress feature. Current progress-specific checks and limitations are recorded in [host progress](progress.md#verification-and-overhead); file/link counts below preserve the original pass's evidence.
+
 Compiler:0.17.0, macOS arm64. README/Getting Started XOR train/evaluate/quantize/e2e/deploy/size, explicit checkpoint loading, both XOR formats, external CSV train/evaluate/deploy/infer-host/simulate-uart and tutorial fixture MNIST MLP int8/CNN int4/UART benchmark paths passed. Core Debug/ReleaseSafe tests and18 compile-fail cases passed (core test result reused unchanged cached binaries). Two new executable API tests passed. Formatting and git diff whitespace checks passed.
 
 Final offline documentation check: **45 Markdown files,224 local links,0 failures,3 mirrored code fences**. Negative probes confirmed missing files, missing heading fragments and README/source drift each fail; probes were removed/restored before the final passing run. English/Japanese README feature claims, representative rows, quick-start commands and model fence were reviewed together; the code fences are also mechanically equal. Linux is covered by updated CI configuration; this local record does not assert a remote run.

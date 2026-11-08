@@ -2,6 +2,7 @@ pub const Service = @import("service.zig").Service;
 pub const benchmark = @import("benchmark.zig");
 pub const protocol = @import("protocol.zig");
 pub const fit = @import("fit.zig");
+pub const host = @import("host/root.zig");
 pub const data = @import("data.zig");
 pub const Conv2D = @import("cnn.zig").Conv2D;
 pub const AveragePool2D = @import("cnn.zig").AveragePool2D;
@@ -24,6 +25,8 @@ pub fn argmax(values: []const i8) ?usize {
     return best;
 }
 test {
+    _ = @import("host/progress.zig");
+    _ = @import("host/download.zig");
     _ = @import("tests.zig");
     _ = @import("train_tests.zig");
     _ = @import("budget_tests.zig");

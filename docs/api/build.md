@@ -12,6 +12,8 @@ Import the Zinn **dependency build module** in your build.zig (`const zinn=@impo
 
 Required options: name (letters/digits/hyphen/underscore), model:LazyPath exporting Structure, dataset:.csv{training,evaluation,header=false} or .mnist{directory,fixture=false}. See [CSV tutorial](../tutorials/csv-classifier.md) for the tested full build script.
 
+Host display: addProject Options.progress=.auto/.plain/.off. Root CLI adds -Dprogress=auto|plain|off, -Dquiet=true and -Ddownload-force=true. Cached training/export logs are separate from CSV/JSON and native firmware-build progress; see [progress integration](../progress.md).
+
 | Option | Default / meaning |
 |---|---|
 | training | epochs20,batch32,rate.05,seed42,split_seed24301,validation_count=null,decay_every10,decay.3,limit60000 |

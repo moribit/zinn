@@ -14,6 +14,7 @@ Start with [Getting Started](getting-started.md), then [an independent CSV appli
 - [API reference](api/README.md): models, training/data, quantization/export, inference/workspace, Build API/options, budgets, UART/adapters.
 - [Concepts and internals](concepts.md), [numerical contract](quantization.md)
 - [Benchmarks and reproducibility](benchmarks.md)
+- [Host progress, streaming download and display controls](progress.md)
 - [Documentation audit](documentation-audit.md), [documentation verification](documentation-validation.md)
 - [Contributing](../CONTRIBUTING.md), [security](../SECURITY.md), [licenses](licenses.md)
 
