@@ -18,6 +18,14 @@ pub fn build(b: *std.Build) void {
     const evaluate_alias = b.step("evaluate", "Evaluate selected project");
     const core = b.addModule("zinn", .{ .root_source_file = b.path("src/root.zig"), .target = target, .optimize = optimize });
     const host_core = coreModule(b, b.graph.host, optimize);
+    const docs_check = b.step("docs-check", "Check offline Markdown links and executable API examples");
+    const doc_links = b.addExecutable(.{ .name = "docs-check", .root_module = b.createModule(.{ .root_source_file = b.path("tools/docs_check.zig"), .target = b.graph.host, .optimize = .safe }) });
+    const doc_run = b.addRunArtifact(doc_links);
+    doc_run.setCwd(b.path("."));
+    doc_run.has_side_effects = true;
+    docs_check.dependOn(&doc_run.step);
+    const doc_api = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("examples/docs/api.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{.{ .name = "zinn", .module = host_core }} }) });
+    docs_check.dependOn(&b.addRunArtifact(doc_api).step);
     const test_step = b.step("test", "Run unit/golden and compile-fail tests");
     const tests = b.addTest(.{ .root_module = host_core });
     test_step.dependOn(&b.addRunArtifact(tests).step);

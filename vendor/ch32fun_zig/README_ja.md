@@ -5,6 +5,10 @@ GPIO / SysTick / I2C / SSD1306 を使ったファームウェアを、`zig build
 
 English version: [README.md](README.md)
 
+## ライセンス
+
+本プロジェクトは [MIT ライセンス](LICENSE)で公開しています。
+
 ## 特徴
 
 - CH32V003 向けの pure Zig 実装

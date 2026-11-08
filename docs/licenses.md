@@ -1,0 +1,7 @@
+# Licenses and dependencies
+
+Original Zinn code/documentation: [MIT](../LICENSE), Copyright2026 Zinn contributors. Required Zig runtime/tooling dependencies are the standard library and, for board support, the bundled Pure Zig ch32fun_zig. No TFLite/CMSIS/Python/NumPy/PyTorch/C runtime is required for inference, fitting or tests. References to other projects are research citations, not linked dependencies.
+
+ch32fun_zig: [MIT](../vendor/ch32fun_zig/LICENSE), Copyright2026 MimocWorks. The upstream [d6524ff license commit](https://github.com/MimocWorks/ch32fun_zig/commit/d6524ff375684e127b0d4ae68c0e47b0a8c7823b) was verified2026-11-08. Source is unchanged from the prior snapshot; only upstream LICENSE, READMEs and distribution list were synchronized. [UPSTREAM](../vendor/ch32fun_zig/UPSTREAM.md) records exact provenance. Preserve both projects' copyright/permission notices when redistributing; Zinn's notice does not relicense upstream code. The former absence-of-license warning is superseded.
+
+Optional chzig/WCH/LLVM/serial tools and GitHub Actions have their own terms and are not linked MCU inference dependencies. Training datasets have separate rights/terms: MNIST is external data from the [official CVDF mirror](https://github.com/cvdfoundation/mnist). Review dataset provenance before redistributing data or derived models. No actual dataset, trained weights or vendor tool binary is added by this documentation pass.

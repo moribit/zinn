@@ -1,5 +1,7 @@
 # 初期調査（2026-11-07）
 
+> Historical research against the original snapshot. Upstream licensing has since been verified and synchronized; see [current license/provenance notes](licenses.md). This record does not override current functionality or licensing.
+
 ## ch32fun_zig
 
 対象: [MimocWorks/ch32fun_zig](https://github.com/MimocWorks/ch32fun_zig/tree/aa799feb7026e7769373e8cee9102ecbf28d7e3e)、commit `aa799feb7026e7769373e8cee9102ecbf28d7e3e`。以下はREADMEだけでなく当該ソースを読んで確認した。

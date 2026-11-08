@@ -1,5 +1,7 @@
 # XOR開発体験フェーズ検証レポート（過去のbaseline）
 
+> Historical baseline. Current representative results: [Benchmarks](benchmarks.md); maintained learning path: [Getting Started](getting-started.md).
+
 現行のCNN/MNIST/int4と容量差は[MNIST検証レポート](mnist-report.md)を参照。以下は前フェーズ時点の記録。
 
 2026-11-07、macOS aarch64、Zig **0.17.0**の実体を明示してローカル検証。作業中にPATHのzigが0.17.1へ変更されたため、その後は `/Users/mimoc/.zvm/0.17.0/zig` を使用。CI設定は更新したが、この変更のリモートCI実行は未確認。

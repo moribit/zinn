@@ -1,99 +1,104 @@
 # Zinn
 
-A tiny, dependency-free neural network inference framework written in Zig for resource-constrained microcontrollers.
+**Tiny neural networks. Pure Zig. From host training to microcontroller firmware.**
 
-Zig **0.17.0**。Pure ZigでCSV/MNISTを学習・保存・評価し、int8/int4整数推論用Zigソースを生成できます。Dense、Conv2D、AveragePoolと共通モデル定義を実装しています。推論はint8/int32、固定ワークスペース、ヒープ・再帰・浮動小数点演算なし。CH32V003へクロスビルドできます。**実機動作・サイクル値は未検証です。**
+[![CI](https://github.com/moribit/zinn/actions/workflows/ci.yml/badge.svg)](https://github.com/moribit/zinn/actions/workflows/ci.yml)
+[![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-orange)
 
-## 最短のフロー
+[日本語](README_ja.md) · [Getting Started](docs/getting-started.md) · [Documentation](docs/README.md)
 
-共通の学習・評価・本番UARTファームウェア生成:
+Zinn is a small neural network inference framework for resource-constrained microcontrollers. Define a model once, train and evaluate it on your computer, then generate integer inference code and CH32V003 firmware using Zig **0.17.0**.
+
+## Features
+
+- Dense and CNN training, CSV/IDX/gzip loading, checkpoints, calibration and Zig source generation in Pure Zig.
+- int8 activations, int32 accumulation and int8 or packed int4 weights. No heap, floating-point computation or runtime graph interpreter in MCU inference.
+- Compile-time shape/quantization checks, explicit caller-owned workspaces and low-level control.
+- Cached `zig build` workflows, independent integer reference checks and final ELF memory budgets.
+- No mandatory Python, ML framework or C library. The bundled MIT-licensed ch32fun_zig provides board support only.
+
+## Supported targets
+
+| Target | Current status |
+|---|---|
+| macOS / Linux | Host library and tools; CI configured for both |
+| CH32V003 / RV32EC | Cross-build and memory checks; **physical execution unverified** |
+| CH32V006 / other MCUs | Future work; portable inference core, no supported board deployment yet |
+
+## Benchmark highlights
+
+Frozen configurations, official MNIST test 10,000, area-resized 16×16 inputs. Host accuracy and CH32V003 **cross-built UART firmware** sizes:
+
+| Model | Integer accuracy | Flash | Static SRAM |
+|---|---:|---:|---:|
+| MLP32 int8 | **96.59%** | 12,408B | 460B |
+| MLP32 int4 | 94.90% | 8,184B | 460B |
+| CNN4 int8 | 97.07% | 6,436B | 1,408B |
+| CNN4 int4 | 95.21% | 5,496B | 1,408B |
+
+All logits match an independent integer reference on all 10,000 inputs. Sizes include startup/runtime/transport, exclude a separate **512B stack allowance**, and reserve 64B of 16KB Flash. CNN4 leaves 128B RAM after that allowance. MCU cycles, latency and stack high-water are **not measured**. Defaults remain MLP16/CNN2. See [conditions and reproduction](docs/benchmarks.md) and [recorded evidence](docs/practicality-report.md).
+
+## Quick start — no hardware required
 
 ```sh
-zig build mnist-download
-zig build train -Dproject=mnist -Dmnist-hidden=32 -Dlearning-rate=0.1
-zig build evaluate -Dproject=mnist -Dmnist-hidden=32 -Dlearning-rate=0.1
-zig build deploy -Dproject=mnist -Dmnist-hidden=32 -Dlearning-rate=0.1 -Dtarget=ch32v003
+git clone https://github.com/moribit/zinn.git
+cd zinn
+zig version                    # Must be 0.17.0
+zig build test
+zig build train                # Short XOR training
+zig build evaluate             # Float evaluation
+zig build quantize             # Generate integer Zig source
+zig build e2e                  # Host integer inference and reference comparison
+zig build deploy               # XOR ELF/bin + capacity check; NEVER flashes
 ```
 
-既定評価はtraining splitから分離したvalidationです。構成確定後だけ`-Devaluation-split=test`で最終評価します。外部アプリ向け`addProject`、CSV入力、UART交換、成果物とキャッシュは[開発・デプロイ手順](docs/deployment.md)と[最小プロジェクト](examples/project/build.zig)を参照してください。`deploy`は書き込みません。物理書き込みは明示的な`flash`です。
+[Getting Started](docs/getting-started.md) explains the artifacts and the boundary between firmware generation and physical flashing.
 
-従来の専用コマンドも維持しています:
+## Define the model once
 
-```sh
-zig build test                 # 数値・勾配・保存・export・compile-fail
-zig build e2e                  # 学習→保存→再読込→量子化→ソース生成→整数推論
-zig build deploy               # XOR本番ELF・binary生成と容量検査（物理書込みはしない）
-zig build mnist-download       # 明示的に公式データを取得
-zig build mnist mnist-firmware # MNIST学習→評価→生成core全test参照一致→V003 cross-build
-```
-
-モデル定義は学習・量子化・生成ソースで共通です。
-
+<!-- zinn-api-sample -->
 ```zig
 const zinn = @import("zinn");
-const Structure = zinn.Definition(2, &.{
+pub const Structure = zinn.Definition(2, &.{
     .{ .units = 8, .activation = .relu },
     .{ .units = 2 },
 });
-const Training = zinn.Trainer(Structure);
-var model = Training.init(42);
-// _ = try model.trainEpoch(samples, 0.05);
-// const checkpoint = model.encode();
 ```
 
-利用者が通常のフローで重み・量子化係数を書く必要はありません。[実行可能な共通定義](examples/xor/definition.zig)と[手順・保存形式](docs/workflow.md)を参照してください。
+This exact snippet is [compiled by documentation checks](examples/docs/model.zig). Weights and quantization coefficients are generated by the tools. [ImageDefinition](docs/api/models.md) adds convolution/pooling; the [low-level API](docs/api/inference.md) retains explicit parameter and memory control.
 
-## 操作
+## Train, evaluate, deploy your application
 
-| コマンド | 出力・用途 |
-|---|---|
-| `zig build train` | seed=42で学習し `zig-out/models/xor.zinn` を保存 |
-| `zig build eval` | 保存モデルのfloat評価。未指定なら自動学習 |
-| `zig build quantize` | 校正・int8化し `zig-out/models/xor.zig` を生成 |
-| `zig build e2e` | 生成ソースをコンパイルし全4入力で独立整数参照と照合 |
-| `zig build firmware-trained` | 生成モデルのSWIO診断版ELF |
-| `zig build firmware-production` | 生成モデルのログなし本番組込用ELF |
-| `zig build deploy` | 本番ELF＋`zig-out/firmware/zinn-trained-production.bin` |
-| `zig build size` | 全3種類の最終ELFのFlash/SRAM予算検査 |
-| `zig build xor` / `firmware` | 既存の手書きXOR Golden／診断版を維持 |
-| `zig build benchmark` | 既存XORのホスト参考ベンチマーク |
-
-`eval`・`quantize`・生成モデルのビルドには `-Dcheckpoint=zig-out/models/xor.zinn` で既存checkpointを指定できます。Flash/SRAM/スタック予算は `-Dflash-bytes=16384 -Dram-bytes=2048 -Dstack-bytes=512 -Dreserved-flash-bytes=64` で検査できます。これらは容量検査値であり、HALのMCU選択やリンカ配置を変更しません。
-
-## MNIST・CNN・int4
+[examples/project](examples/project/build.zig) is an independent Zig package with its own model and CSV files. Its build script calls `zinn.addProject(b, dependency, options)`:
 
 ```sh
-zig build mnist-train mnist mnist-firmware -Dmnist-model=cnn
-zig build mnist mnist-firmware -Dmnist-model=cnn -Dweight-format=int4 \
-  -Dmnist-checkpoint=zig-out/models/mnist-cnn.zinn
+zig build --build-file examples/project/build.zig train evaluate deploy infer-host simulate-uart
 ```
 
-validationで構成を固定した最新評価（train55,000/validation5,000/test10,000）では、MLP32 int8=**96.59%**／int4=94.90%、CNN4 int8=97.07%／int4=95.21%。4構成とも全test入力・全logitが独立整数参照と一致し、UART本番版をV003容量内でクロスビルド済みです。CNN4は512Bスタック予算込みのRAM余裕128Bで、追加機能には再検査が必要です。実機の動作・50ms・stack最大使用量は未検証です。[条件・比較・容量](docs/practicality-report.md)。前フェーズのMLP16/CNN2の結果は履歴として残しています。
+Outputs include `.zinn`, generated `.zig`, `.elf`, `.bin`, input frames and JSON reports. `deploy` builds/checks capacity; a separate explicit `flash` step requires chzig and hardware. See [Custom CSV Classifier](docs/tutorials/csv-classifier.md) and the [Build API](docs/api/build.md).
 
-汎用CSVは `zig build data-train -Dfeatures=... -Dclasses=... -Dcsv-train=... -Dcsv-test=...`。詳細は[データ・MNIST手順](docs/mnist.md)、[実測レポート](docs/mnist-report.md)、[CNN/int4設計](docs/mnist-cnn-int4-design.md)。
+## Examples
 
-## 低レベルAPI
+| Example | Purpose |
+|---|---|
+| [XOR](docs/tutorials/xor.md) | Host training/export/inference and Golden Test |
+| [Custom CSV classifier](docs/tutorials/csv-classifier.md) | Standalone addProject package; toy XOR data |
+| [MNIST](docs/tutorials/mnist.md) | MLP/CNN, int8/int4, validation, firmware generation |
+| [UART inference](docs/tutorials/uart.md) | External input, class and all logits; host simulation before hardware |
 
-手書き `Dense/Sequential/infer` も継続利用できます。重みはoutput-major、biasはaccumulator単位。
+## Documentation
 
-```zig
-const Model = zinn.Sequential(.{
-    zinn.Dense(.{
-        .input = 2, .output = 2,
-        .weights = &.{ 1, -1, -1, 1 },
-        .bias = &.{ 0, 0 },
-        .activation = .relu,
-    }),
-});
-var workspace: Model.Workspace = undefined;
-var output: [Model.output_len]i8 = undefined;
-Model.infer(&.{ 0, 1 }, &output, &workspace);
-```
+[Documentation index](docs/README.md), [API reference](docs/api/README.md), [concepts](docs/concepts.md), [numerical contract](docs/quantization.md), [benchmarks](docs/benchmarks.md), [research/history](docs/README.md#research-and-history).
 
-生成モデルには実数scaleのcomptime metadataが入り、係数・隣接scaleを検証します。legacyのmetadata未指定モデルでは従来の整数契約を維持します。入力・出力はworkspaceと重ねず、workspaceを同時使用しないでください。
+## Project status
 
-Python、外部Cライブラリ、MLランタイムは不要です。HALだけに `ch32fun_zig` の未改変・固定スナップショットを使用します。[出典と公開許可](vendor/ch32fun_zig/UPSTREAM.md)。
+Early-stage OSS. Low-level APIs and checkpoint v1 are maintained; high-level tooling may evolve. Real MNIST evaluation, host reference agreement and cross-builds are recorded. Physical deployment and the 50ms target remain unverified. Per-channel quantization, QAT, int2 and CH32V006 are unimplemented. UART CRC detects corruption; it provides no authentication or encryption.
 
-詳細: [設計](docs/developer-experience.md)、[アーキテクチャ](docs/architecture.md)、[数値仕様](docs/quantization.md)、[容量](docs/memory-budget.md)、[最新検証](docs/practicality-report.md)、[初期調査](docs/research.md)。
+## Contributing
 
-学習器はDense/Conv2D/AveragePool/ReLU、MSEまたはsoftmax CE、mini-batch SGD。量子化は対称int8/int4のmin/max校正です。QAT、自動量子化探索、Depthwise、CH32V006は未実装です。XORの4/4は真理値表の検証であり汎化精度ではありません。
+Read [CONTRIBUTING](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md), [security policy](SECURITY.md) and [CHANGELOG](CHANGELOG.md). Small changes with reproducible numerical/resource checks are welcome.
+
+## License
+
+Zinn is [MIT licensed](LICENSE). Bundled ch32fun_zig carries its [own MIT notice](vendor/ch32fun_zig/LICENSE); see [provenance](vendor/ch32fun_zig/UPSTREAM.md). Dataset terms are separate from code licensing.

@@ -5,6 +5,10 @@ You can build and flash firmware using GPIO / SysTick / I2C / SSD1306 with plain
 
 Japanese version: [README_ja.md](README_ja.md)
 
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
 ## Features
 
 - Pure Zig implementation for CH32V003

@@ -1,5 +1,7 @@
 # 開発体験の設計（次フェーズ）
 
+> Historical design rationale. Current public API and options are documented in the [API reference](api/README.md).
+
 ## 現行APIの分析と互換性
 
 既存Denseは重み・bias・整数係数をcomptimeで受け取り、Sequentialはshapeとzero pointだけを検証していた。学習用shapeも実数scaleも持たず、入出力を2面workspaceへコピーしていた。Tensorは実装ではゼロ次元を許すが文書では拒否と記述され不一致。CIのtee pipelineは明示的なpipefailを持たない。

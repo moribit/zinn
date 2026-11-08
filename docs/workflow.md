@@ -1,5 +1,7 @@
 # 学習からデプロイまで
 
+> Preserved first-phase workflow notes. For maintained commands, artifacts and the independent application path, use [Getting Started](getting-started.md) and the [Build API](api/build.md).
+
 ## 共通のモデル定義
 
 `examples/xor/definition.zig` の `Structure = zinn.Definition(...)` がshape/activationを定義する。定義だけではパラメータを持たず、`zinn.Trainer(Structure)` にf32パラメータを生成する。`Sample` のinput/targetも定義から固定長配列になる。

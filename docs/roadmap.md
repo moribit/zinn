@@ -1,5 +1,7 @@
 # ロードマップ
 
+> Historical planning notes; some milestones below are now implemented. Current status and verification boundaries are in the [README](../README.md).
+
 - 実装済み: int8/int4 Dense、Conv2D、AveragePool、静的workspace、shape/scale/overflow検証。
 - 実装済み: 共通Definition/ImageDefinition、Pure Zig f32学習/MSE/softmax CE/SGD、checkpoint、CSV/IDX/gzip、MNIST前処理、量子化/export。
 - 検証済み: XOR、MNIST MLP/CNN×int8/int4、独立参照一致、V003 cross-buildと容量検査、オフラインfixture CI設定。

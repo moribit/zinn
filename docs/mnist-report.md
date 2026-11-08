@@ -1,5 +1,7 @@
 # MNIST・CNN・int4検証レポート
 
+> Historical experiment record (MLP16/CNN2, older training protocol). Current representative results and reproduction: [Benchmarks](benchmarks.md). Do not compare the different configurations as a single-variable improvement.
+
 2026-11-07、macOS aarch64、Zig 0.17.0、hostはsafe、firmwareはsmall/RV32EC。実データを実際にダウンロードして学習・評価した。Python等の外部ML環境は使用していない。
 
 ## 固定した条件

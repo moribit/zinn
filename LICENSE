@@ -20,6 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-This license covers original Zinn files only. vendor/ch32fun_zig is an
-unmodified upstream snapshot published with the project owner's permission;
-see vendor/ch32fun_zig/UPSTREAM.md. No license to upstream code is granted here.
+This license covers original Zinn files. The vendored ch32fun_zig files carry
+their own MIT license and copyright notice; see vendor/ch32fun_zig/LICENSE
+and vendor/ch32fun_zig/UPSTREAM.md.

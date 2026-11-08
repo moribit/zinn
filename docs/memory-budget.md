@@ -1,4 +1,6 @@
-# メモリ予算（現行）
+# メモリ予算（過去の設計・検証記録）
+
+> Historical/design notes. Current English contract: [budgets](api/budgets.md); representative ELF/stack evidence: [benchmarks](benchmarks.md). Allowances are not hardware measurements.
 
 CNN/MNISTの4構成は[MNIST検証レポート](mnist-report.md)を参照。
 

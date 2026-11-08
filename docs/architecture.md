@@ -1,5 +1,7 @@
 # アーキテクチャ
 
+> Preserved design notes. Maintained English explanation: [Concepts](concepts.md) and [API reference](api/README.md).
+
 `src/`はMCU非依存。HAL importはfirmwareだけ。`ch32fun_zig`のaddFirmware/ch32Target/Startupを未改変で利用する。
 
 | 層 | 役割 |

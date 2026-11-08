@@ -1,35 +1,57 @@
-# 初期検証レポート（過去のbaseline）
+# Benchmarks and verification
 
-現行の結果と変更点は[次フェーズ検証レポート](next-phase-report.md)を参照。以下の値は初期コミット時点の記録。
+Representative evidence recorded2026-11-07 with Zig0.17.0 on macOS arm64. These results are not measurements newly performed by this documentation pass. [Raw manifests/curves](experiments/README.md) and [full analysis](practicality-report.md) retain provenance. [Initial baseline](benchmarks-initial.md) and [older MNIST](mnist-report.md) are historical and use different configurations.
 
-環境: 2026-11-07、macOS aarch64、`zig version` = 0.17.0。ローカルで確認。GitHub Actionsの実行結果はまだない。
+## What is verified
 
-## Milestone 1
+| Category | Evidence / status |
+|---|---|
+| Host f32 training/evaluation | Real MNIST; deterministic train/validation split and selected checkpoints |
+| Host integer inference | Every logit matches independent int64/division reference on all10,000 official test samples per configuration |
+| CH32V003 build | RV32EC ELF/bin cross-build including startup/runtime/HAL/UART/CRC/benchmark service |
+| Flash/static SRAM | Final ELF PT_LOAD accounting,64B Flash reservation |
+| Static stack estimate | Optional normal direct-call disassembly estimate; IRQs excluded |
+| MCU cycles/latency | **Unmeasured** |
+| Physical UART/logits | **Unverified** |
+| MCU stack high-water/startup peak | **Unmeasured**; since-ready paint implemented, not startup measurement |
 
-実装: int8 Dense/int32累積、ReLU、再量子化、Argmax、Tensor、comptime Dense/Sequential、2面workspace。全てPure Zig。
+## Frozen representative configurations
 
-`zig build test --summary all`: 7/7テスト成功（rootのimport testを含む）。`-Doptimize=safe`も7/7成功。さらに期待した診断で失敗するcompile-fail 5ケースに成功: 重みshape、int32 overflow、multiplier=0、層間shape、層間zero point。
+Official [CVDF MNIST mirror](https://github.com/cvdfoundation/mnist), training60,000/test10,000. Area28×28→16×16, /255, HWC. split_seed24301 gives55,000 training +5,000 validation; seed42 initialization/training shuffle, mini-batch32, SGD/CE. Learning rate decays×0.3 after10 epochs. Checkpoints selected by best validation accuracy then lower CE. Official test is used only after fixing configuration; calibration1024 uses training partition only. int8/int4 share the float checkpoint.
 
-数値テストは正負の半端値、int32両端からの再量子化、最大multiplier、shift=31、飽和、非ゼロzero point、ReLU、Argmaxの同値/空を確認。再量子化は8 shifts × 2001 inputsを独立した除算式と比較。Denseはseed=42の256入力でint64参照累積・除算式と一致。多層XORの全4入力、workspace再利用、幅の変わる層、入出力aliasも確認。
+- MLP:256→32/ReLU→10 logits, rate0.1, max20 epochs, best epoch13; f32 test96.62%.
+- CNN:Conv3×3/channels4/ReLU→AveragePool2×2/stride2→Dense10, rate0.05, max20 epochs, best epoch19; f32 test97.06%.
 
-`zig build xor`: 4/4 golden vector一致、workspace=4B。出力logitsは00→[1,0]、01→[0,1]、10→[0,1]、11→[1,0]。実機も同じmodel.zigを使用する。
+| UART firmware | Integer test | Parameters B | Flash B | Static SRAM B | Workspace B | Static stack estimate B | RAM margin after512B allowance |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| MLP32 int8 | 96.59% | 8680 | 12408 | 460 | 32 | 252 | 1076 |
+| MLP32 int4 | 94.90% | 4424 | 8184 | 460 | 32 | 256 | 1076 |
+| CNN4 int8 | 97.07% | 2052 | 6436 | 1408 | 980 | 224 | 128 |
+| CNN4 int4 | 95.21% | 1054 | 5496 | 1408 | 980 | 224 | 128 |
 
-`zig build benchmark`: fast最適化、100,000回、208,375ns合計、整数表示2ns/推論、checksum=50,000（単回観測）。volatile入力書き込み/出力読み出しを含む。非常に小さいホスト向けに最適化されたモデルの参考値であり、MCU性能や一般Dense性能を表さない。測定値にはループ・入力選択・checksum・timerのoverheadを含み、繰返しで変動する。
+Parameters count weights+bias, not total binary. Flash includes runtime/transport/helpers and is limited to16320B usable of16384B. Static RAM includes all linked globals/transport/workspace, **not stack**.512B is a budget, not a measurement. CNN4's128B remaining RAM restricts added application features/IRQs. Budget flags do not alter hardware capacity/linker placement. The50ms inference goal remains unverified. Default model widths remain MLP16/CNN2; these rows require explicit options.
 
-制限: int8/per-tensorのみ。i64再量子化のソフトウェア演算はモデル次第でサイズ/時間を増やす。スケール互換性は利用者責任。モデルexport、学習、MNIST精度は未評価。
+## Reproduce intentionally
 
-## Milestone 2（実機なしの範囲）
+This performs real fitting; it is not required for offline documentation checks:
 
-`zig build firmware`: RV32EC/freestanding/eabi small、Startup/vector/HAL込みELF成功。`zig build size`: Flash=3172B、static RAM=12B、stack allowance=512B、RAM予算合計524B。詳細と静的stack見積りは [memory-budget.md](memory-budget.md)。再ビルド時はこのコマンドの最新値を正とする。
+```sh
+zig build mnist-download
+ZIG=zig sh tools/validation-study.sh data/mnist
+zig build deploy infer-host simulate-uart -Dproject=mnist -Ddata-dir=data/mnist -Dproject-checkpoint=zig-out/models/val-mlp32-lr1-e20-s42.zinn -Dmnist-hidden=32 -Dapp-name=final-mlp-int8 -Devaluation-split=test -Drequest=benchmark
+zig build deploy infer-host simulate-uart -Dproject=mnist -Ddata-dir=data/mnist -Dproject-checkpoint=zig-out/models/val-mlp32-lr1-e20-s42.zinn -Dmnist-hidden=32 -Dweight-format=int4 -Dapp-name=final-mlp-int4 -Devaluation-split=test -Drequest=benchmark
+zig build deploy infer-host simulate-uart -Dproject=mnist -Ddata-dir=data/mnist -Dproject-checkpoint=zig-out/models/val-cnn4-e20-s42.zinn -Dmnist-model=cnn -Dcnn-channels=4 -Dapp-name=final-cnn-int8 -Devaluation-split=test -Drequest=benchmark
+zig build deploy infer-host simulate-uart -Dproject=mnist -Ddata-dir=data/mnist -Dproject-checkpoint=zig-out/models/val-cnn4-e20-s42.zinn -Dmnist-model=cnn -Dcnn-channels=4 -Dweight-format=int4 -Dapp-name=final-cnn-int4 -Devaluation-split=test -Drequest=benchmark
+```
 
-実機は使用していない。推論成功、ホストとの実機一致、実測Flash書き込み、stack high-water、MCU cycle数、推論msは未検証。クロスビルドの成功を実機動作の成功として扱わない。
+The study script runs eight prespecified validation comparisons; it never opens official test files. Do not select a different seed/model based on final test results. Keep script/options/curves beside checkpoints, because v1 lacks preprocessing/split provenance. Optional `stack-audit` with the same project options and -Dobjdump=/path/to/llvm-objdump checks static direct-call bounds; LLVM is not required for standard builds.
 
-## 実機で次に行う手順
+## Hardware measurements
 
-1. ELFをZig objcopy等でbinaryへ変換して、上流ch32fun_zigのWCH-LinkE/SWIO手順で書き込む。今回書き込みは行っていない。
-2. `chzig minichlink -T` を起動。smallでもSWIO logging有効。端末接続までwaitForTerminalで待機する。
-3. 全4行のlogitsと `ok=1` を照合する。`cycles` はSysTickのwrapping差分。compiler memory barrierで推論を計測区間内に保持する。割込みは有効化しない。
-4. 48MHz設定を実機で確認して cycles/48000 をmsへ換算。空区間のread overheadを別途測り、複数回のmin/median/maxも記録する。今回のサンプルは各入力1回のみ。
-5. stack watermarkを追加してStartup・推論・ログを含む最大値を確認する。割込みを有効化する場合は別予算にする。
+Use [UART Tutorial](tutorials/uart.md) with identical model/checkpoint/input. Explicitly flash, record clock/board/firmware identity, send benchmark frames, check all logits against host and retain captures. The service warms up once and measures9 inferences, subtracts minimum timer-read overhead and reports min/median/max. Keep input transfer, preprocessing and adapter initialization separate. Fake-board simulation is only a protocol test; never interpret its cycle fields as CPU performance.
 
-次の課題は実機での再現性と計測。その後、int4とPure Zig学習/exportを段階追加する。
+Record stack paint as since-ready high-water, not startup maximum; IRQ-enabled applications need additional analysis/measurement. Compare int4 Flash savings against decode/64-bit-requantization cycle cost only after real captures exist. Do not fill missing measurements with estimates.
+
+## Research results versus public highlights
+
+The [fixed validation plan](validation-plan.md) and [analysis](practicality-report.md) compare widths/rates/epochs/resize/calibration and a separate seed43 repeat. Earlier MLP16/CNN2 tests used all60,000 training examples with no validation; they are not a controlled single-variable comparison with the rows above. README uses only the frozen representative table. Keep exploration results in dated records and update highlights only with reproducible, clearly categorized evidence.

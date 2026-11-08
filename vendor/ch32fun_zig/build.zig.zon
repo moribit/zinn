@@ -12,5 +12,6 @@
         "tools",
         "README.md",
         "README_ja.md",
+        "LICENSE",
     },
 }
