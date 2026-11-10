@@ -39,6 +39,14 @@ fn name(w: *std.Io.Writer, text: []const u8, width: usize) !void {
     try w.writeAll("...");
     try w.writeAll(text[text.len - (width - 3 - first) ..]);
 }
+pub fn visual(buffer: []u8, e: p.Event, s: p.Stats, width: usize) ![]u8 {
+    var w: std.Io.Writer = .fixed(buffer);
+    try @import("terminal.zig").bar(&w, if (e.kind == .completed) @as(?f64, 1) else s.fraction, if (width >= 76) 16 else if (width >= 56) 10 else 5);
+    try w.writeByte(' ');
+    if (e.kind == .completed and e.total == null) try w.writeAll("done ");
+    try stats(&w, e, s, width >= 56, width >= 76);
+    return buffer[0..@min(w.end, width)];
+}
 pub fn format(buffer: []u8, e: p.Event, s: p.Stats, columns: usize) ![]u8 {
     var out: std.Io.Writer = .fixed(buffer);
     if (std.mem.eql(u8, e.unit, "files")) {
@@ -130,4 +138,19 @@ test "cached files and aggregate summaries fit narrow displays without fake rate
     const summary = try format(&buffer, all, p.measure(all, 0, 1_000_000_000), 40);
     try std.testing.expectEqualStrings("MNIST 4/4: 1 downloaded, 3 cached", summary);
     try std.testing.expectEqualStrings("", try format(&buffer, .{ .name = "MNIST", .unit = "files", .done = 1 }, p.measure(all, 0, 1), 40));
+}
+test "visual download fits physical terminal columns and drops whole optional fields" {
+    const e: p.Event = .{ .name = "fixture.gz", .done = 5 * 1024 * 1024, .total = 10 * 1024 * 1024, .unit = "B" };
+    var buffer: [512]u8 = undefined;
+    inline for (.{ 39, 59, 79, 119 }) |width| {
+        const line = try visual(&buffer, e, p.measure(e, 0, 1_000_000_000), width);
+        try std.testing.expect(line.len <= width);
+        try std.testing.expect(std.mem.indexOf(u8, line, "5.00/10.00MiB 50%") != null);
+        try std.testing.expectEqual(width >= 56, std.mem.indexOf(u8, line, "5.00MiB/s") != null);
+        try std.testing.expectEqual(width >= 76, std.mem.indexOf(u8, line, "ETA 1s") != null);
+    }
+    const unknown: p.Event = .{ .name = "file.gz", .done = 1024, .kind = .completed, .unit = "B" };
+    const done = try visual(&buffer, unknown, p.measure(unknown, 0, 1_000_000_000), 39);
+    try std.testing.expect(std.mem.indexOf(u8, done, "[#####] done 1.00KiB") != null);
+    try std.testing.expect(std.mem.indexOf(u8, done, "%") == null);
 }

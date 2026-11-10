@@ -24,6 +24,7 @@ pub fn training(b: *std.Build, pkg: *std.Build, fitting: *std.Build.Step.Run, mo
     const backend = b.step(backend_name, "Internal cacheable training artifacts");
     backend.dependOn(&b.addInstallFile(receipt, b.fmt("reports/{s}-training-receipt.txt", .{model})).step);
     const tool = b.addExecutable(.{ .name = b.fmt("{s}-training-display", .{model}), .root_module = b.createModule(.{ .root_source_file = pkg.path("tools/train_watch.zig"), .target = b.graph.host, .optimize = .safe }) });
+    tool.root_module.addImport("progress", b.createModule(.{ .root_source_file = pkg.path("src/host/progress.zig"), .target = b.graph.host, .optimize = .safe }));
     const watch = b.addRunArtifact(tool);
     configure(watch, mode, b.fmt("Zinn: training {s}", .{model}));
     watch.disable_zig_progress = true;

@@ -24,10 +24,42 @@ for mode in auto off; do
 done
 test ! -s "$result_dir/off.log"
 test -s "$result_dir/auto.log"
+for mode in plain auto off; do
+    CI=true TERM=dumb "$zig_bin" build evaluate -Dproject=mnist -Dmnist-fixture=true -Dmnist-epochs=2 "-Dapp-name=$name" "-Dproject-checkpoint=$result_dir/out/training/$name.zinn" --prefix "$result_dir/out" "-Dprogress=$mode" > "$result_dir/export-$mode.stdout" 2> "$result_dir/export-$mode.log"
+    grep '^MNIST generated core:' "$result_dir/export-$mode.log" > "$result_dir/reference-$mode.txt"
+    if [ "$mode" = plain ]; then
+        cp "$result_dir/out/models/$name-int8.zig" "$result_dir/expected.zig"
+        cp "$result_dir/out/reports/$name-model.json" "$result_dir/expected.json"
+    else
+        cmp "$result_dir/expected.zig" "$result_dir/out/models/$name-int8.zig"
+        cmp "$result_dir/expected.json" "$result_dir/out/reports/$name-model.json"
+        cmp "$result_dir/export-plain.stdout" "$result_dir/export-$mode.stdout"
+        cmp "$result_dir/reference-plain.txt" "$result_dir/reference-$mode.txt"
+    fi
+done
+"$zig_bin" build "${common[@]}" -Dprogress=plain > "$result_dir/concurrent-1.stdout" 2> "$result_dir/concurrent-1.log" &
+first_pid=$!
+"$zig_bin" build "${common[@]}" -Dprogress=plain > "$result_dir/concurrent-2.stdout" 2> "$result_dir/concurrent-2.log" &
+second_pid=$!
+wait "$first_pid"
+wait "$second_pid"
+grep -q "cached $name" "$result_dir/concurrent-1.log"
+grep -q "cached $name" "$result_dir/concurrent-2.log"
+parallel_name="$name-fresh"
+parallel=(train -Dproject=mnist -Dmnist-fixture=true -Dmnist-epochs=2 "-Dapp-name=$parallel_name" --prefix "$result_dir/out" -Dprogress=plain)
+"$zig_bin" build "${parallel[@]}" > "$result_dir/fresh-1.stdout" 2> "$result_dir/fresh-1.log" &
+first_pid=$!
+"$zig_bin" build "${parallel[@]}" > "$result_dir/fresh-2.stdout" 2> "$result_dir/fresh-2.log" &
+second_pid=$!
+wait "$first_pid"
+wait "$second_pid"
+test "$(grep -h -c "^completed $parallel_name$" "$result_dir/fresh-1.log" "$result_dir/fresh-2.log" | awk '{sum += $1} END {print sum}')" = 1
+test "$(grep -h -c "^cached $parallel_name$" "$result_dir/fresh-1.log" "$result_dir/fresh-2.log" | awk '{sum += $1} END {print sum}')" = 1
+cmp "$result_dir/expected.zinn" "$result_dir/out/training/$parallel_name.zinn"
 if LC_ALL=C grep -q $'\033' "$result_dir/auto.log"; then echo 'ANSI escape in CI output'; exit 1; fi
 if "$zig_bin" build train -Dproject=mnist -Dmnist-fixture=true -Dmnist-epochs=0 "-Dapp-name=$name" --prefix "$result_dir/out" -Dprogress=plain > "$result_dir/failed.stdout" 2> "$result_dir/failed.log"; then
     echo 'Invalid training unexpectedly succeeded'; exit 1
 fi
 if grep -q "cached $name" "$result_dir/failed.log"; then echo 'Failed training reported cached'; exit 1; fi
 grep -q 'InvalidTrainingOptions' "$result_dir/failed.log"
-echo "Progress CLI: plain/live, cached, auto/CI, off; identical checkpoint/CSV/stdout ($result_dir)"
+echo "Progress CLI: live/cached, auto/plain/off, concurrency; identical checkpoint/CSV/source/JSON/reference ($result_dir)"

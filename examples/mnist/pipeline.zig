@@ -34,6 +34,11 @@ pub fn main(init: std.process.Init) !void {
     var renderer = z.host.progress.Renderer.initJournal(init, parsed.mode, parsed.journal);
     defer renderer.deinit();
     const observer = renderer.observer();
+    if (args.len > 1 and std.mem.eql(u8, args[1], "train")) renderer.describe(comptime blk: {
+        var text: []const u8 = std.fmt.comptimePrint("{d}", .{S.input_len});
+        for (S.layers) |layer| text = text ++ std.fmt.comptimePrint(" -> {s}({d})", .{ @tagName(layer.kind), layer.units });
+        break :blk text;
+    });
     try run(init, args, observer);
     try z.host.progress.saveReceipt(init, parsed);
 }

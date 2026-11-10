@@ -51,7 +51,7 @@ zig build deploy               # XOR ELF/bin生成・容量検査。書き込み
 
 成果物の詳細は[Getting Started](docs/getting-started.md)。標準の技術文書は英語です。
 
-ホストの進捗表示はstderrに出力します。`-Dprogress=plain`でログ表示、`-Dquiet=true`で無効化できます。学習中はEpoch／Batch進捗を表示し、ログも保存します。キャッシュ利用時は`cached`と成果物の場所を表示します。ダウンロードはファイル名、KiB／MiB単位の転送量・速度、ETAを表示します。[設定とBuildの制約](docs/progress.md)を参照してください。
+ホストの進捗表示はstderrに出力します。autoでは対応端末でASCIIバーを更新し、`-Dprogress=plain`でログ表示、`-Dquiet=true`で無効化できます。学習中はEpoch／Batch進捗を表示し、plain形式のログも保存します。キャッシュ利用時は`cached`と成果物の場所を表示します。ダウンロードはファイル名、KiB／MiB単位の転送量・速度、ETAを表示します。[設定とBuildの制約](docs/progress.md)を参照してください。
 
 ## 共通モデル定義
 

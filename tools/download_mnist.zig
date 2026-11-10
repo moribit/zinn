@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
         }
         const url = try std.fmt.allocPrint(init.arena.allocator(), "https://storage.googleapis.com/cvdf-datasets/mnist/{s}", .{spec.name});
         var stage: progress.Task = .{ .observer = observer, .name = spec.name, .total = null, .unit = "B" };
-        observer.emit(.{ .name = spec.name, .kind = .started, .unit = "B" });
+        observer.emit(.{ .name = spec.name, .kind = .started, .unit = "B", .detail = try std.fmt.allocPrint(init.arena.allocator(), "{d}/4", .{index + 1}) });
         errdefer stage.fail("operation failed");
         var request = try client.request(.GET, try std.Uri.parse(url), .{ .headers = .{ .accept_encoding = .{ .override = "identity" } } });
         defer request.deinit();

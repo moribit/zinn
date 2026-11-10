@@ -1,5 +1,10 @@
 //! Synchronous borrowed events -> pure measurement -> bounded stderr rendering.
 const std = @import("std");
+pub const terminal_ui = @import("terminal.zig");
+pub const training_ui = @import("training_display.zig");
+test {
+    _ = training_ui;
+}
 pub const Mode = enum { auto, plain, off };
 pub const Kind = enum { started, updated, epoch, completed, failed };
 pub const Metric = struct { name: []const u8, value: f64 };
@@ -119,31 +124,48 @@ pub const Renderer = struct {
     active: bool = false,
     output_failed: bool = false,
     journal: ?std.Io.File = null,
+    events: ?std.Io.File = null,
+    terminal: ?@import("terminal.zig").Line = null,
+    fn record(self: *Renderer, event: Event) void {
+        if (self.events) |file| {
+            var event_bytes: [4096]u8 = undefined;
+            var writer: std.Io.Writer = .fixed(&event_bytes);
+            std.json.Stringify.value(event, .{}, &writer) catch return;
+            writer.writeByte('\n') catch return;
+            file.writeStreamingAll(self.io, writer.buffered()) catch {};
+        }
+    }
+    /// Supplemental presenter metadata; does not change the saved plain log.
+    pub fn describe(self: *Renderer, detail: []const u8) void {
+        if (self.mode != .off) self.record(.{ .name = "Model", .detail = detail });
+    }
     pub fn initJournal(process: std.process.Init, mode: Mode, directory: ?[]const u8) Renderer {
         var self: Renderer = if (directory == null) init(process, mode) else .{ .io = process.io, .mode = mode };
         if (directory) |dir| {
             const path = std.fs.path.join(process.arena.allocator(), &.{ dir, "live.log" }) catch return self;
             self.journal = std.Io.Dir.cwd().createFile(process.io, path, .{}) catch null;
+            const events_path = std.fs.path.join(process.arena.allocator(), &.{ dir, "events.jsonl" }) catch return self;
+            self.events = std.Io.Dir.cwd().createFile(process.io, events_path, .{}) catch null;
         }
         return self;
     }
     fn columns(io: std.Io, fallback: usize) usize {
-        if (@import("builtin").os.tag == .windows) return @max(1, @min(160, fallback));
-        var size: std.posix.winsize = .{ .row = 0, .col = 0, .xpixel = 0, .ypixel = 0 };
-        const result = io.operate(.{ .device_io_control = .{ .file = .stderr(), .code = std.posix.T.IOCGWINSZ, .arg = &size } }) catch return @max(1, @min(160, fallback));
-        const actual = if (result.device_io_control >= 0 and size.col > 1) size.col - 1 else fallback;
-        return @max(1, @min(160, @min(actual, fallback)));
+        return terminal_ui.columns(io, fallback);
     }
     pub fn init(init_process: std.process.Init, mode: Mode) Renderer {
         const env = init_process.environ_map;
-        const detected_tty = mode == .auto and env.get("CI") == null and !std.mem.eql(u8, env.get("TERM") orelse "dumb", "dumb") and (std.Io.File.stderr().isTty(init_process.io) catch false);
+        const detected_tty = mode == .auto and @import("terminal.zig").supported(env.get("TERM") orelse "dumb", env.get("CI") != null, std.Io.File.stderr().isTty(init_process.io) catch false);
         const width = std.fmt.parseInt(usize, env.get("COLUMNS") orelse "78", 10) catch 78;
         const actual_width = if (detected_tty) columns(init_process.io, width) else @max(1, @min(160, width));
-        const tty = detected_tty and actual_width >= 60; // Narrow displays safely use ordinary lines.
+        const tty = detected_tty;
         const root = if (mode == .auto and env.get("ZIG_PROGRESS") != null and env.get("CI") == null) std.Progress.start(init_process.io, .{ .disable_printing = true, .root_name = "Zinn" }) else std.Progress.Node.none;
         // When a parent owns the terminal, publish IPC instead of drawing a
         // second carriage-return UI over its progress display.
-        return .{ .io = init_process.io, .mode = mode, .tty = tty and root.index == .none, .width = actual_width, .root = root };
+        const terminal: ?terminal_ui.Line = if (tty and root.index == .none) blk: {
+            const line = terminal_ui.Line.init(init_process, true);
+            break :blk if (line.enabled) line else null;
+        } else null;
+        return .{ .io = init_process.io, .mode = mode, .tty = terminal != null, .width = actual_width, .root = root, .terminal = terminal };
     }
     pub fn observer(self: *Renderer) Observer {
         return if (self.mode == .off) .{} else .{ .context = self, .callback = notify };
@@ -181,7 +203,8 @@ pub const Renderer = struct {
         // with thousands of sub-millisecond epochs in tiny CSV fixtures.
         const epoch_summary = event.kind == .epoch and slot.epoch_gate.allow(now, 500_000_000, epoch == 1 or epoch == epochs);
         const force = event.kind == .started or event.kind == .completed or event.kind == .failed or epoch_summary;
-        if (!slot.gate.allow(now, if (self.tty or self.root.index != .none) 200_000_000 else 5_000_000_000, force)) return;
+        if (!slot.gate.allow(now, if (self.tty or self.events != null or self.root.index != .none) 200_000_000 else 5_000_000_000, force)) return;
+        self.record(event);
         slot.node.setEstimatedTotalItems(if (event.total) |t| @intCast(@min(t, std.math.maxInt(usize))) else 0);
         slot.node.setCompletedItems(@intCast(@min(event.done, std.math.maxInt(usize))));
         if (event.kind == .completed or event.kind == .failed) {
@@ -191,7 +214,24 @@ pub const Renderer = struct {
         if (!slot.log_gate.allow(now, if (self.tty) 200_000_000 else 5_000_000_000, force)) return;
         const stats = measure(event, slot.start_ns, now);
         const download_event = std.mem.eql(u8, event.unit, "B") or std.mem.eql(u8, event.unit, "files");
-        var inplace = self.tty and (event.kind == .started or event.kind == .updated);
+        if (self.terminal) |*line| {
+            const current_width = line.width();
+            if (download_event and std.mem.eql(u8, event.unit, "B") and event.kind == .started) {
+                line.finish();
+                std.debug.print("[{s}] {s}\n", .{ event.detail, event.name });
+                return;
+            }
+            if (download_event and std.mem.eql(u8, event.unit, "B") and (event.kind == .updated or event.kind == .completed) and event.detail.len == 0) {
+                var b: [512]u8 = undefined;
+                const text = @import("progress_format.zig").visual(&b, event, stats, current_width) catch return;
+                line.drawWidth(text, current_width);
+                if (event.kind == .completed) line.finish();
+                return;
+            }
+            line.finish();
+            self.width = current_width;
+        }
+        var inplace = self.tty and !download_event and (event.kind == .started or event.kind == .updated);
         var bytes: [2048]u8 = undefined;
         var out: std.Io.Writer = .fixed(&bytes);
         if (download_event) {
@@ -249,6 +289,8 @@ pub const Renderer = struct {
     /// without defers; no cursor/colour/terminal mode was changed to restore.
     pub fn deinit(self: *Renderer) void {
         if (self.journal) |file| file.close(self.io);
+        if (self.events) |file| file.close(self.io);
+        if (self.terminal) |*line| line.deinit();
         for (&self.slots) |*slot| slot.node.end();
         self.root.end();
         if (self.active) std.Io.File.stderr().writeStreamingAll(self.io, "\n") catch {};

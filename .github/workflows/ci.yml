@@ -37,6 +37,8 @@ jobs:
       - run: zig build xor
       - name: Cached training and live plain progress (offline)
         run: bash tests/progress_cli.sh zig progress-cli-results
+      - name: Visual bars in real PTYs (offline)
+        run: bash tests/progress_pty.sh zig progress-pty-results
       - run: zig build e2e
       - run: zig build e2e -Dweight-format=int4
       - run: zig build data-train -Dcsv-train=examples/data_classifier/train.csv -Dcsv-test=examples/data_classifier/test.csv -Dweight-format=int4
@@ -84,3 +86,4 @@ jobs:
             progress-*.json
             progress-*.log
             progress-cli-results/
+            progress-pty-results/
