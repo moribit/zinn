@@ -101,6 +101,16 @@ zig build --build-file examples/integration/multi-model/build.zig run
 
 No hardware or flash operation is required. See [integration and Build examples](docs/integration.md).
 
+## Handwritten digits on desktop
+
+Draw on a small canvas and classify digits immediately with the optional
+[mimoc-ui desktop example](examples/mnist-desktop/README.md) (macOS). A trained
+MLP32 int8 model is bundled; no training or MNIST download is needed to launch.
+
+```sh
+zig build --build-file examples/mnist-desktop/build.zig run -Doptimize=safe
+```
+
 ## Examples
 
 | Example | Purpose |

@@ -15,7 +15,7 @@ jobs:
         with:
           version: 0.17.0
       - run: zig version
-      - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/docs examples/project/build.zig examples/project/custom.build.zig examples/project/build.zig.zon examples/project/model.zig examples/integration
+      - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/docs examples/project/build.zig examples/project/custom.build.zig examples/project/build.zig.zon examples/project/model.zig examples/integration examples/mnist-desktop/build.zig examples/mnist-desktop/build.zig.zon examples/mnist-desktop/app.zig examples/mnist-desktop/canvas.zig examples/mnist-desktop/main.zig examples/mnist-desktop/model.zig
       - run: zig build docs-check
       - run: zig build test --summary all 2>&1 | tee test-results-debug.txt
       - run: zig build test -Doptimize=safe --summary all 2>&1 | tee test-results-safe.txt
@@ -59,6 +59,15 @@ jobs:
       - run: zig build firmware firmware-trained firmware-production deploy
       - name: Lightweight external model integration
         run: bash tests/integration.sh zig integration-results
+      - name: MNIST desktop headless integration (no display or training)
+        run: |
+          zig build --build-file examples/mnist-desktop/build.zig test
+          zig build --build-file examples/mnist-desktop/build.zig test -Doptimize=safe
+      - name: Build native MNIST desktop and render snapshot
+        if: runner.os == 'macOS'
+        run: |
+          zig build --build-file examples/mnist-desktop/build.zig -Doptimize=safe
+          ./examples/mnist-desktop/zig-out/bin/zinn-mnist-desktop --snapshot mnist-desktop.pbm
       - name: External project Build API
         run: zig build --build-file examples/project/build.zig train evaluate deploy infer-host simulate-uart
       - name: Check memory budgets (preserve pipeline failures)
@@ -95,4 +104,5 @@ jobs:
             progress-cli-results/
             cli-consistency-results/
             integration-results/
+            mnist-desktop.pbm
             progress-pty-results/

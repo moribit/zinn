@@ -94,6 +94,16 @@ zig build --build-file examples/integration/multi-model/build.zig run
 
 実機や書き込みは不要です。[組み込み方法とBuild例](docs/integration.md)を参照してください。
 
+## デスクトップで手書き数字を判定
+
+小さなキャンバスへ描いた数字を即座に判定する
+[mimoc-uiデスクトップexample](examples/mnist-desktop/README.md)を追加しています（macOS）。
+学習済みMLP32 int8モデルを同梱しているため、起動時の学習・MNIST取得は不要です。
+
+```sh
+zig build --build-file examples/mnist-desktop/build.zig run -Doptimize=safe
+```
+
 ## 例とドキュメント
 
 - [XOR](docs/tutorials/xor.md)：学習・生成・整数推論とGolden Test。

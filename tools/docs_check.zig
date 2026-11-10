@@ -85,7 +85,7 @@ const Checker = struct {
 };
 pub fn main(init: std.process.Init) !void {
     var c: Checker = .{ .a = init.arena.allocator(), .io = init.io };
-    for ([_][]const u8{ "README.md", "README_ja.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md" }) |file| try c.check(file);
+    for ([_][]const u8{ "README.md", "README_ja.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SECURITY.md", "CHANGELOG.md", "examples/mnist-desktop/README.md", "examples/mnist-desktop/assets/PROVENANCE.md" }) |file| try c.check(file);
     for ([_][]const u8{ "docs", ".github" }) |root| {
         const dir = try std.Io.Dir.cwd().openDir(init.io, root, .{ .iterate = true });
         defer dir.close(init.io);

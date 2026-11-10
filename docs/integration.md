@@ -196,3 +196,7 @@ Use addProject when you want the existing UART firmware preset, host replay,
 capacity checking and explicit flash step. Its options and Artifacts remain
 compatible. It delegates training/export/reference verification to the same
 addModel implementation. Neither level flashes unless explicitly requested.
+
+For a complete interactive desktop application using a bundled MNIST model, see
+the optional [mimoc-ui handwriting example](../examples/mnist-desktop/README.md).
+Its UI dependencies do not enter MCU or root-library builds.

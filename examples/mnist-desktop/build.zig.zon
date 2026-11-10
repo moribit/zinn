@@ -1,0 +1,14 @@
+.{
+    .name = .zinn_mnist_desktop,
+    .fingerprint = 0x62ab2ef1c7c1b8e9,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .zinn = .{ .path = "../.." },
+        .mimoc_ui = .{
+            .url = "git+https://github.com/moribit/mimoc-ui.git#aa61a53e63595f764b96a9dfd09b870d7a2f95d5",
+            .hash = "mimoc_ui-0.1.0-9nb8bjpNDgBkOV7rt12IYN5IVRwRJuVEHaDeW_4Hru6c",
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "main.zig", "app.zig", "canvas.zig", "model.zig", "assets", "README.md", "Info.plist" },
+}
