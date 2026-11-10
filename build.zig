@@ -1,3 +1,4 @@
+pub const ProgressBuild = @import("build_support/progress.zig");
 pub const ModelArtifacts = @import("build_support/model.zig").Artifacts;
 pub const MemoryCheck = @import("build_support/memory.zig").Check;
 /// Consumer-target inference module, shared by generated models.

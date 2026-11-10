@@ -5,6 +5,7 @@ Public library entry point: [src/root.zig](../../src/root.zig). Build integratio
 | Topic | APIs |
 |---|---|
 | [Models](models.md) | Definition, ImageDefinition, Shape, Tensor |
+| [Reinforcement learning](../rl.md) | Host DQN, replay, policy export and CartPole |
 | [Training and data](training-data.md) | Trainer, fit, CSV, IDX, gzip, resize |
 | [Quantization/export](quantization-export.md) | Params, coefficient, QuantizedFormat, source generation |
 | [Inference](inference.md) | Dense, Conv2D, AveragePool2D, Sequential, Workspace, infer, argmax, packed weights |

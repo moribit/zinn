@@ -135,3 +135,10 @@ Read [CONTRIBUTING](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md),
 ## License
 
 Zinn is [MIT licensed](LICENSE). Bundled ch32fun_zig carries its [own MIT notice](vendor/ch32fun_zig/LICENSE); see [provenance](vendor/ch32fun_zig/UPSTREAM.md). Dataset terms are separate from code licensing.
+
+## Reinforcement learning
+
+The [CartPole RL Lab](examples/rl-cartpole/README.md) adds host-only DQN learning,
+a mimoc-ui desktop visualizer (macOS), checkpoint reuse, int8 policy export and
+CH32V003 cross-builds. [Measured results](docs/rl-cartpole-report.md) distinguish
+float reward, integer action agreement and hardware measurements.

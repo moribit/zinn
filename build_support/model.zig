@@ -7,7 +7,17 @@ pub const Dataset = union(enum) {
     mnist: struct { directory: std.Build.LazyPath, fixture: bool = false },
 };
 pub const Training = struct { epochs: usize = 20, batch: usize = 32, rate: f32 = 0.05, seed: u32 = 42, split_seed: u32 = 24301, validation_count: ?usize = null, decay_every: usize = 10, decay: f32 = 0.3, limit: usize = 60000 };
+/// Alternative host producer for non-supervised models (for example DQN).
+/// The producer owns fitting/calibration/evaluation; Zinn only wires its artifacts.
+pub const Generated = struct {
+    source: std.Build.LazyPath,
+    checkpoint: std.Build.LazyPath,
+    metadata: std.Build.LazyPath,
+    generate: *std.Build.Step,
+    verify: *std.Build.Step,
+};
 pub const Options = struct {
+    generated: ?Generated = null,
     build_file: ?std.Build.LazyPath = null,
     progress: progress.Mode = .auto,
     name: []const u8,
@@ -91,6 +101,21 @@ pub fn addModel(b: *std.Build, dependency: ?*std.Build.Dependency, options: Opti
     for (options.name) |c| if (!std.ascii.isAlphanumeric(c) and c != '-' and c != '_') @panic("model name must contain only letters, digits, '-' or '_'");
     const pkg = if (dependency) |d| d.builder else b;
     const prefix = options.step_prefix orelse b.fmt("{s}-", .{options.name});
+    if (options.generated) |g| {
+        const train = b.step(b.fmt("{s}train", .{prefix}), "Run caller-owned model producer");
+        train.dependOn(g.generate);
+        const evaluate = b.step(b.fmt("{s}evaluate", .{prefix}), "Read caller-owned model evaluation artifacts");
+        evaluate.dependOn(g.generate);
+        const generate = b.step(b.fmt("{s}generate", .{prefix}), "Generate caller-owned model source");
+        generate.dependOn(g.generate);
+        const e2e = b.step(b.fmt("{s}e2e", .{prefix}), "Verify caller-owned integer model");
+        e2e.dependOn(g.verify);
+        const host = module(b, pkg, b.graph.host, .safe);
+        const model = b.createModule(.{ .root_source_file = g.source, .target = b.graph.host, .optimize = .safe });
+        model.addImport("zinn", host);
+        return .{ .source = g.source, .checkpoint = g.checkpoint, .selected_checkpoint = g.checkpoint, .metadata = g.metadata, .format = options.format, .train = train, .evaluate = evaluate, .generate = generate, .e2e = e2e, .evaluation_backend = g.generate, .verification_backend = g.verify, .host_core = host, .host_generated = model, .package = pkg };
+    }
+
     const is_csv = options.dataset == .csv;
     const validation_count = options.training.validation_count orelse (if (is_csv) @as(usize, 0) else @as(usize, 5000));
     const final_test = options.evaluation == .final_test or (is_csv and validation_count == 0);

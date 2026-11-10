@@ -121,3 +121,7 @@ zig build --build-file examples/mnist-desktop/build.zig run -Doptimize=safe
 ## ライセンス
 
 Zinn本体は[MIT](LICENSE)。同梱ch32fun_zigにも[独立したMIT表記](vendor/ch32fun_zig/LICENSE)があります。[出典](vendor/ch32fun_zig/UPSTREAM.md)を保持してください。データセットの条件はコードのライセンスとは別です。
+
+## 強化学習
+
+[CartPole RL Lab](examples/rl-cartpole/README.md)は、ホスト専用DQN学習、mimoc-uiによるmacOS可視化、Checkpoint再利用、int8ポリシー生成、CH32V003クロスビルドに対応します。[評価レポート](docs/rl-cartpole-report.md)ではfloatのReward、整数モデルとの行動一致率、実機未測定の項目を区別しています。

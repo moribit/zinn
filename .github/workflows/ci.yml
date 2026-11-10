@@ -16,6 +16,7 @@ jobs:
           version: 0.17.0
       - run: zig version
       - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/docs examples/project/build.zig examples/project/custom.build.zig examples/project/build.zig.zon examples/project/model.zig examples/integration examples/mnist-desktop/build.zig examples/mnist-desktop/build.zig.zon examples/mnist-desktop/app.zig examples/mnist-desktop/canvas.zig examples/mnist-desktop/logits.zig examples/mnist-desktop/main.zig examples/mnist-desktop/model.zig
+      - run: zig fmt --check examples/rl-cartpole/*.zig examples/rl-cartpole/build.zig.zon
       - run: zig build docs-check
       - run: zig build test --summary all 2>&1 | tee test-results-debug.txt
       - run: zig build test -Doptimize=safe --summary all 2>&1 | tee test-results-safe.txt
@@ -68,6 +69,17 @@ jobs:
         run: |
           zig build --build-file examples/mnist-desktop/build.zig -Doptimize=safe
           ./examples/mnist-desktop/zig-out/bin/zinn-mnist-desktop --snapshot mnist-desktop.pbm
+      - name: CartPole deterministic headless DQN, int8 and firmware
+        run: |
+          zig build --build-file examples/rl-cartpole/build.zig test -Doptimize=safe
+          bash tests/rl_cartpole.sh zig rl-cartpole-results
+      - name: CartPole native controller and snapshot
+        if: runner.os == 'macOS'
+        run: |
+          zig build --build-file examples/rl-cartpole/build.zig test-gui
+          zig build --build-file examples/rl-cartpole/build.zig test-gui -Doptimize=safe
+          zig build --build-file examples/rl-cartpole/build.zig
+          ./examples/rl-cartpole/zig-out/bin/zinn-rl-lab --snapshot cartpole.pbm
       - name: External project Build API
         run: zig build --build-file examples/project/build.zig train evaluate deploy infer-host simulate-uart
       - name: Check memory budgets (preserve pipeline failures)
@@ -106,3 +118,5 @@ jobs:
             integration-results/
             mnist-desktop.pbm
             progress-pty-results/
+            rl-cartpole-results/
+            cartpole.pbm

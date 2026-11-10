@@ -4,6 +4,10 @@ This project has no published release history asserted here. Package version0.1.
 
 ## Unreleased
 
+- Host-only DQN with deterministic replay, target networks and existing Trainer/checkpoint reuse.
+- CartPole headless learning/evaluation, mimoc-ui macOS visualization, centered int8 policy export and CH32V003 final-ELF budget checks.
+- Optional caller-owned model producer in `addModel`, preserving existing supervised workflows.
+
 - Host progress events/measurement/ASCII rendering, optional fit/evaluation/calibration observation, Build display controls and captured progress logs.
 - Streaming MNIST downloads with gzip/IDX validation, safe atomic publication, valid-file reuse and explicit force replacement.
 

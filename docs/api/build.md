@@ -126,3 +126,25 @@ is measured. No firmware/runtime/objcopy/flash step is created by this function.
 
 See [integration](../integration.md), [host tutorial](../tutorials/host-integration.md)
 and [CH32 tutorial](../tutorials/ch32-integration.md) for complete executable builds.
+
+## Externally produced models (including RL)
+
+`addModel` accepts optional `Options.generated: ?Generated` without changing its
+existing supervised path. The caller supplies `source`, `checkpoint`, `metadata`
+LazyPaths and `generate`, `verify` Step pointers. This branch creates the named
+train/evaluate/generate/e2e aliases without launching supervised tools. `model`
+and `dataset` remain required descriptive inputs for source compatibility; the
+caller owns actual calibration, evaluation and verification in this branch.
+
+The returned `ModelArtifacts.createModule(b, target, optimize)` and `attach`
+retain their existing behavior, compiling generated source for the consumer's
+target. This does not introduce firmware ownership or a runtime model interpreter.
+The [CartPole build](../../examples/rl-cartpole/build.zig) uses this path, followed
+by the existing `addMemoryCheck` on the full CH32 ELF.
+
+`ProgressBuild` also exposes the existing host Build progress helper module for
+custom producers. Its `configure`/`operation` functions attach the existing
+Journal/Receipt/presenter workflow. Model producers remain cached; the presenter
+reports completed/cached status without rerunning training for display purposes.
+The CartPole example demonstrates the required summary/receipt protocol. This is
+an advanced host Build integration API; no host presenter enters target modules.

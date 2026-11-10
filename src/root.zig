@@ -1,3 +1,4 @@
+pub const rl = @import("rl/root.zig");
 pub const Service = @import("service.zig").Service;
 pub const benchmark = @import("benchmark.zig");
 pub const protocol = @import("protocol.zig");
@@ -19,6 +20,7 @@ pub const Sequential = @import("model.zig").Sequential;
 pub const argmax = @import("infer.zig").argmax;
 pub const Workspace = @import("infer.zig").Workspace;
 test {
+    _ = rl;
     _ = @import("host/progress.zig");
     _ = @import("host/download.zig");
     _ = @import("tests.zig");
