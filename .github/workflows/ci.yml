@@ -15,7 +15,7 @@ jobs:
         with:
           version: 0.17.0
       - run: zig version
-      - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/docs examples/project/build.zig examples/project/build.zig.zon examples/project/model.zig
+      - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/docs examples/project/build.zig examples/project/custom.build.zig examples/project/build.zig.zon examples/project/model.zig
       - run: zig build docs-check
       - run: zig build test --summary all 2>&1 | tee test-results-debug.txt
       - run: zig build test -Doptimize=safe --summary all 2>&1 | tee test-results-safe.txt
@@ -25,10 +25,13 @@ jobs:
           zig build progress-tools
           ./zig-out/bin/progress-demo --progress=plain > progress-plain.json 2> progress-plain.log
           ./zig-out/bin/progress-demo --quiet > progress-off.json 2> progress-off.log
+          ZINN_PROGRESS=invalid ./zig-out/bin/progress-demo --progress=off > progress-override.json 2> progress-override.log
           CI=true TERM=dumb LC_ALL=C ./zig-out/bin/progress-demo --progress=auto > progress-ci.json 2> progress-ci.log
           cmp progress-plain.json progress-off.json
+          cmp progress-plain.json progress-override.json
           cmp progress-plain.json progress-ci.json
           test ! -s progress-off.log
+          test ! -s progress-override.log
           test -s progress-plain.log
           if ./zig-out/bin/progress-demo --progress=plain --fail > progress-fail.json 2> progress-fail.log; then
             echo "Expected failing progress fixture"
@@ -37,6 +40,8 @@ jobs:
       - run: zig build xor
       - name: Cached training and live plain progress (offline)
         run: bash tests/progress_cli.sh zig progress-cli-results
+      - name: Project dispatch, saved summaries, sessions and custom build script
+        run: bash tests/cli_consistency.sh zig cli-consistency-results
       - name: Visual bars in real PTYs (offline)
         run: bash tests/progress_pty.sh zig progress-pty-results
       - run: zig build e2e
@@ -86,4 +91,5 @@ jobs:
             progress-*.json
             progress-*.log
             progress-cli-results/
+            cli-consistency-results/
             progress-pty-results/

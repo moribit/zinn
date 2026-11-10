@@ -45,6 +45,7 @@ From the Zinn checkout:
 ```sh
 zig build --build-file examples/project/build.zig train
 zig build --build-file examples/project/build.zig evaluate
+zig build --build-file examples/project/build.zig e2e
 zig build --build-file examples/project/build.zig deploy
 zig build --build-file examples/project/build.zig infer-host simulate-uart
 ```
@@ -61,5 +62,11 @@ Or `cd examples/project` and run the same steps without --build-file. Outputs ar
 | Host transport check | reports/sensor-simulated-response.json/.bin |
 
 deploy includes generated-core verification and ELF capacity checks, with no hardware write. simulate-uart uses a fake clock: its timing is not MCU performance. Unchanged fitting/export is cached. Keep a checkpoint's model, preprocessing and split configuration together; v1 alone does not contain that provenance.
+
+evaluate reports classification accuracy/loss; e2e reports independent integer
+reference agreement, not accuracy. deploy reuses those cached producers. The
+[custom build entry point](../../examples/project/custom.build.zig) runs the same
+workflow with an explicit build_file option; `-Depochs=2001` demonstrates an option
+forwarded by the standalone build script. See the [CLI reference](../cli.md).
 
 For new data, edit Structure, CSV files and options; do not edit generated weight arrays. See [addProject/options](../api/build.md), [memory budgets](../api/budgets.md) and [UART](uart.md).

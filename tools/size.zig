@@ -4,7 +4,7 @@ const progress = @import("progress");
 pub fn main(init: std.process.Init) !void {
     const parsed = try progress.cli(init);
     const args = parsed.args;
-    var renderer = progress.Renderer.init(init, parsed.mode);
+    var renderer = progress.Renderer.initJournalToken(init, parsed.mode, parsed.journal, parsed.token);
     defer renderer.deinit();
     var task = renderer.observer().task("Memory budget verification", null);
     errdefer task.fail("ELF memory verification failed");
@@ -36,4 +36,6 @@ pub fn main(init: std.process.Init) !void {
     }, .{});
     try std.Io.File.stdout().writeStreamingAll(init.io, json);
     task.finish();
+    try progress.writeSummary(init, parsed, .{ .kind = .deploy, .target = "CH32V003", .flash = report.flash, .flash_limit = target.flash_bytes - target.reserved_flash_bytes, .static_ram = report.static_ram, .stack_allowance = target.stack_bytes, .ram_margin = target.ram_bytes - report.static_ram - target.stack_bytes });
+    try progress.saveReceipt(init, parsed);
 }

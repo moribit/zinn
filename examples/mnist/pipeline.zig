@@ -31,18 +31,14 @@ fn class(target: [S.output_len]f32) usize {
 pub fn main(init: std.process.Init) !void {
     const parsed = try z.host.progress.cli(init);
     const args = parsed.args;
-    var renderer = z.host.progress.Renderer.initJournal(init, parsed.mode, parsed.journal);
+    var renderer = z.host.progress.Renderer.initJournalToken(init, parsed.mode, parsed.journal, parsed.token);
     defer renderer.deinit();
     const observer = renderer.observer();
-    if (args.len > 1 and std.mem.eql(u8, args[1], "train")) renderer.describe(comptime blk: {
-        var text: []const u8 = std.fmt.comptimePrint("{d}", .{S.input_len});
-        for (S.layers) |layer| text = text ++ std.fmt.comptimePrint(" -> {s}({d})", .{ @tagName(layer.kind), layer.units });
-        break :blk text;
-    });
-    try run(init, args, observer);
+    if (args.len > 1 and std.mem.eql(u8, args[1], "train")) renderer.describe(structure());
+    try run(init, args, observer, parsed);
     try z.host.progress.saveReceipt(init, parsed);
 }
-fn run(init: std.process.Init, args: []const []const u8, observer: z.host.progress.Observer) !void {
+fn run(init: std.process.Init, args: []const []const u8, observer: z.host.progress.Observer, parsed: z.host.progress.Cli) !void {
     if (args.len < 2) return error.ExpectedCommand;
     var model = T.init(42);
     if (std.mem.eql(u8, args[1], "train")) {
@@ -59,12 +55,15 @@ fn run(init: std.process.Init, args: []const []const u8, observer: z.host.progre
         loading.finish();
         const partitions = try @import("dataset.zig").partition(T, samples);
         var curve: std.Io.Writer.Allocating = .init(init.arena.allocator());
+        const started = z.host.progress.nowNs(init.io);
         const fitted = try z.fit.train(T, &model, partitions.training, partitions.validation, .{ .epochs = epochs, .batch = batch, .rate = rate, .seed = seed, .decay_every = options.decay_every, .decay = options.decay, .observer = observer, .model_name = if (@hasDecl(options, "model_name")) options.model_name else if (options.csv) "CSV training" else if (options.cnn) "MNIST CNN training" else "MNIST MLP training" }, &curve.writer);
+        const elapsed = z.host.progress.nowNs(init.io) -| started;
         try std.Io.File.stdout().writeStreamingAll(init.io, curve.written());
         try log(init, "# selected_epoch={d} train={d} validation={d} validation_correct={d} validation_ce={d} split_seed={d}\n", .{ fitted.best_epoch, fitted.training_count, fitted.validation_count, fitted.best_validation_correct, fitted.best_validation_loss, options.split_seed });
         // Checkpoint epochs historically counts optimizer steps; preserve that contract.
         const bytes = model.encode();
         try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[9], .data = &bytes });
+        try z.host.progress.writeSummary(init, parsed, .{ .kind = .train, .structure = structure(), .best_epoch = if (partitions.validation.len > 0) fitted.best_epoch else null, .best_validation_accuracy = if (partitions.validation.len > 0) 100 * @as(f64, @floatFromInt(fitted.best_validation_correct)) / @as(f64, @floatFromInt(partitions.validation.len)) else null, .final_epoch_loss = try finalLoss(curve.written()), .loss_kind = "cross_entropy", .elapsed_ns = elapsed });
     } else if (std.mem.eql(u8, args[1], "export")) {
         if (args.len != 11) return error.ExpectedExportArguments;
         try model.decode(try read(init, args[2]));
@@ -136,5 +135,19 @@ fn run(init: std.process.Init, args: []const []const u8, observer: z.host.progre
         try quantized.writeVerification(&source.writer, testing[0..count]);
         try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[9], .data = source.written() });
         exporting.finish();
+        try z.host.progress.writeSummary(init, parsed, .{ .kind = .evaluate, .structure = structure(), .dataset = if (options.csv) "CSV" else if (options.fixture) "synthetic-fixture" else "MNIST", .dataset_source = if (options.evaluation_test) args[5] else args[3], .split = if (options.evaluation_test) "test" else "validation", .samples = testing.len, .accuracy = 100 * @as(f64, @floatFromInt(evaluation.correct)) / @as(f64, @floatFromInt(testing.len)), .quantized_accuracy = 100 * @as(f64, @floatFromInt(correct)) / @as(f64, @floatFromInt(testing.len)), .loss = evaluation.loss, .loss_kind = "MSE", .format = if (options.int4) "int4" else "int8" });
     } else return error.UnknownCommand;
+}
+fn structure() []const u8 {
+    return z.host.progress.summary.structure(S);
+}
+// Reuse the authoritative final CSV row; no extra evaluation and no Result API
+// change. The float is parsed back at its original f32 precision.
+fn finalLoss(curve: []const u8) !f32 {
+    const trimmed = std.mem.trimEnd(u8, curve, "\n\r");
+    const row = trimmed[1 + (std.mem.lastIndexOfScalar(u8, trimmed, '\n') orelse return error.InvalidTrainingCurve) ..];
+    var columns = std.mem.splitScalar(u8, row, ',');
+    _ = columns.next();
+    _ = columns.next();
+    return std.fmt.parseFloat(f32, columns.next() orelse return error.InvalidTrainingCurve);
 }

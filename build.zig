@@ -19,8 +19,11 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const Project = enum { xor, mnist, csv };
     const selected_project = b.option(Project, "project", "Common workflow project (legacy commands remain available)") orelse .xor;
+    const app_checkpoint = b.option([]const u8, "project-checkpoint", "Selected project checkpoint (v1; all projects)");
     const train_alias = b.step("train", "Train the selected project");
     const evaluate_alias = b.step("evaluate", "Evaluate selected project");
+    const e2e_alias = b.step("e2e", "Verify selected project's integer logits against its independent reference");
+    const build_file = b.path(b.option([]const u8, "project-build-file", "Build script for presenter child builds (default build.zig)") orelse "build.zig");
     const core = b.addModule("zinn", .{ .root_source_file = b.path("src/root.zig"), .target = target, .optimize = optimize });
     const host_core = coreModule(b, b.graph.host, optimize);
     const progress_tools = b.step("progress-tools", "Install optional host progress fixture and overhead benchmark");
@@ -107,7 +110,7 @@ pub fn build(b: *std.Build) void {
     const checkpoint = training.addOutputFileArg("xor.zinn");
     const xor_fit_log = training.captureStdErr(.{});
     const save_checkpoint = b.addInstallFile(checkpoint, "models/xor.zinn");
-    const xor_steps = progress_build.training(b, b, training, progress_mode, "xor", "xor-train", "models/xor.zinn");
+    const xor_steps = progress_build.operation(b, b, training, progress_mode, "xor", "xor-train", "models/xor.zinn", .train, build_file);
     const xor_backend = xor_steps.backend;
     xor_backend.dependOn(&save_checkpoint.step);
     xor_backend.dependOn(&b.addInstallFile(xor_fit_log, "reports/xor-training-progress.log").step);
@@ -115,14 +118,16 @@ pub fn build(b: *std.Build) void {
     const eval_run = b.addRunArtifact(pipeline);
     progress_build.configure(eval_run, progress_mode, "Zinn: evaluate XOR");
     eval_run.addArg("eval");
-    const model_path = b.option([]const u8, "checkpoint", "Existing XOR .zinn checkpoint (otherwise train automatically)");
-    if (model_path) |path| eval_run.addFileArg(b.path(path)) else eval_run.addFileArg(checkpoint);
-    b.step("eval", "Evaluate saved float XOR model").dependOn(&eval_run.step);
-    if (selected_project == .xor) evaluate_alias.dependOn(&eval_run.step);
+    const legacy_checkpoint = b.option([]const u8, "checkpoint", "Legacy checkpoint alias (otherwise train automatically)");
+    const model_path = app_checkpoint orelse legacy_checkpoint;
+    if (model_path) |path| eval_run.addFileArg(.{ .cwd_relative = path }) else eval_run.addFileArg(checkpoint);
+    const xor_evaluation = progress_build.operation(b, b, eval_run, progress_mode, "xor", "xor-evaluate", "reports/xor-evaluate-summary.json", .evaluate, build_file);
+    b.step("eval", "Legacy XOR evaluation alias").dependOn(xor_evaluation.display);
+    if (selected_project == .xor) evaluate_alias.dependOn(xor_evaluation.display);
     const quantize = b.addRunArtifact(pipeline);
     progress_build.configure(quantize, progress_mode, "Zinn: calibrate / export XOR");
     quantize.addArg("quantize");
-    if (model_path) |path| quantize.addFileArg(b.path(path)) else quantize.addFileArg(checkpoint);
+    if (model_path) |path| quantize.addFileArg(.{ .cwd_relative = path }) else quantize.addFileArg(checkpoint);
     const source = quantize.addOutputFileArg("xor.zig");
     const save_source = b.addInstallFile(source, "models/xor.zig");
     const xor_export_log = quantize.captureStdErr(.{});
@@ -138,10 +143,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{ .{ .name = "zinn", .module = host_core }, .{ .name = "trained_model", .module = generated } },
     }) });
-    const e2e = b.step("e2e", "Train/save/load/quantize/compile/verify integer XOR");
-    e2e.dependOn(&b.addRunArtifact(verify).step);
-    e2e.dependOn(&eval_run.step);
-    e2e.dependOn(&save_checkpoint.step);
+    const xor_verification = b.addRunArtifact(verify);
+    progress_build.configure(xor_verification, progress_mode, "Zinn: XOR integer reference verification");
+    const xor_verification_steps = progress_build.operation(b, b, xor_verification, progress_mode, "xor", "xor-e2e", "models/xor.zig", .e2e, build_file);
+    const e2e = xor_verification_steps.backend;
+    if (selected_project == .xor) e2e_alias.dependOn(xor_verification_steps.display);
+    if (model_path == null) e2e.dependOn(&save_checkpoint.step);
     e2e.dependOn(&save_source.step);
     e2e.dependOn(&save_xor_export_log.step);
     const csv_features = b.option(usize, "features", "CSV feature count") orelse 2;
@@ -272,7 +279,7 @@ pub fn build(b: *std.Build) void {
     const save_training_log = b.addInstallFile(mnist_training_log, b.fmt("models/{s}-training.txt", .{model_prefix}));
     const save_mnist_progress = b.addInstallFile(mnist_fit_log, b.fmt("reports/{s}-training-progress.log", .{model_prefix}));
     const save_mnist = b.addInstallFile(mnist_checkpoint, b.fmt("models/{s}.zinn", .{model_prefix}));
-    const mnist_train_step = progress_build.training(b, b, mnist_training, progress_mode, model_prefix, "mnist-train", b.fmt("models/{s}.zinn", .{model_prefix})).backend;
+    const mnist_train_step = progress_build.operation(b, b, mnist_training, progress_mode, model_prefix, "mnist-train", b.fmt("models/{s}.zinn", .{model_prefix}), .train, build_file).backend;
     mnist_train_step.dependOn(&save_mnist.step);
     mnist_train_step.dependOn(&save_training_log.step);
     mnist_train_step.dependOn(&save_mnist_progress.step);
@@ -281,7 +288,6 @@ pub fn build(b: *std.Build) void {
     const mnist_export = b.addRunArtifact(mnist_tool);
     progress_build.configure(mnist_export, progress_mode, "Zinn: evaluate / calibrate / export MNIST");
     mnist_export.addArg("export");
-    const app_checkpoint = b.option([]const u8, "project-checkpoint", "Selected project checkpoint (v1)");
     const input_bin = b.option([]const u8, "input-bin", "Optional raw quantized input bytes for host/UART replay");
     const sample_index = b.option(usize, "sample-index", "Embedded validation/test vector for host replay") orelse 0;
     const sequence = b.option(u16, "sequence", "UART request sequence") orelse 1;
@@ -390,11 +396,19 @@ pub fn build(b: *std.Build) void {
             sizes.dependOn(&b.addInstallFile(size_text, b.fmt("reports/{s}-memory.txt", .{spec[1]})).step);
             sizes.dependOn(&b.addInstallFile(json, b.fmt("reports/{s}-memory.json", .{spec[1]})).step);
             if (selected_project == .xor and std.mem.eql(u8, spec[0], "firmware-production")) {
-                deploy.dependOn(&install.step);
-                deploy.dependOn(&run_size.step);
+                const xor_deployment = progress_build.operation(b, b, run_size, progress_mode, "xor", "xor-deploy", "firmware/zinn-trained-production.elf", .deploy, build_file);
+                const xor_deploy = xor_deployment.backend;
+                deploy.dependOn(xor_deployment.display);
+                xor_deploy.dependOn(&install.step);
+                run_size.step.dependOn(e2e);
+                xor_deploy.dependOn(&b.addInstallFile(fw.getEmittedBin(), "firmware/zinn-trained-production.elf").step);
                 const binary = fw.addObjCopy(.{ .format = .binary, .basename = "zinn-trained-production.bin" });
                 const bin_install = b.addInstallFile(binary.getOutput(), "firmware/zinn-trained-production.bin");
-                deploy.dependOn(&bin_install.step);
+                xor_deploy.dependOn(&bin_install.step);
+                const flash_run = b.addSystemCommand(&.{ "chzig", "flash", "--no-build", "--bin" });
+                flash_run.addFileArg(binary.getOutput());
+                flash_run.step.dependOn(deploy);
+                b.step("flash", "Explicitly flash selected XOR production binary").dependOn(&flash_run.step);
             }
         }
         if (selected_project != .xor) {
@@ -402,6 +416,7 @@ pub fn build(b: *std.Build) void {
             const configured_model = b.path(b.option([]const u8, "model", "Custom model module exporting Structure") orelse (if (csv) "examples/data_classifier/project_model.zig" else "examples/mnist/project_model.zig"));
             const project_name = b.option([]const u8, "app-name", "Common workflow artifact name") orelse (if (csv) "classifier" else "mnist-uart");
             if (addProject(b, null, .{
+                .build_file = build_file,
                 .progress = progress_mode,
                 .name = project_name,
                 .model = configured_model,
@@ -433,6 +448,7 @@ pub fn build(b: *std.Build) void {
                 stack_alias.dependOn(project.stack_audit);
                 train_alias.dependOn(project.train);
                 evaluate_alias.dependOn(project.evaluate);
+                e2e_alias.dependOn(project.e2e.?);
                 deploy.dependOn(project.deploy);
                 b.step("flash", "Explicit physical flash for selected project").dependOn(project.flash);
                 b.step("infer-host", "Infer selected project and emit UART request").dependOn(project.infer_host);

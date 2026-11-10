@@ -21,6 +21,7 @@ The following commands download data and perform real fitting; they are not part
 zig build mnist-download
 zig build train -Dproject=mnist -Dapp-name=digits -Dmnist-hidden=32 -Dlearning-rate=0.1 -Dmnist-epochs=20
 zig build evaluate -Dproject=mnist -Dapp-name=digits -Dmnist-hidden=32 -Dlearning-rate=0.1 -Dmnist-epochs=20
+zig build e2e -Dproject=mnist -Dapp-name=digits -Dmnist-hidden=32 -Dlearning-rate=0.1 -Dmnist-epochs=20
 zig build deploy -Dproject=mnist -Dapp-name=digits -Dmnist-hidden=32 -Dlearning-rate=0.1 -Dmnist-epochs=20 -Dtarget=ch32v003
 ```
 
@@ -31,10 +32,17 @@ Official train60,000 is shuffled with split_seed24301 into55,000 training and5,0
 ## Reuse a checkpoint and change weight format
 
 ```sh
-zig build evaluate deploy -Dproject=mnist -Dapp-name=digits-int4 -Dmnist-hidden=32 -Dweight-format=int4 -Dproject-checkpoint=zig-out/training/digits.zinn
+zig build evaluate e2e deploy -Dproject=mnist -Dapp-name=digits-int4 -Dmnist-hidden=32 -Dweight-format=int4 -Dproject-checkpoint=zig-out/training/digits.zinn
 ```
 
 Preprocessing, Structure and split/calibration settings must match. A checkpoint alone does not record them. Both formats use int8 activations; int4 saves weight Flash, not activation SRAM. Low-bit decoding has an unmeasured MCU time cost. CNN4 requires -Dmnist-model=cnn -Dcnn-channels=4 and has very little RAM headroom with UART. Always inspect the final memory report.
+
+evaluate reports float/integer classification accuracy and explicitly labelled
+MSE; the training curve uses cross-entropy. e2e checks every integer logit against
+the reference, so PASS is not a digit-accuracy score. `e2e -Dproject=mnist` now
+selects MNIST (older releases incorrectly ran XOR). `mnist` remains an explicit
+legacy command with separate defaults/paths. Short reference checks omit ETA
+until enough elapsed time and samples exist. See the [CLI reference](../cli.md).
 
 After freezing the model/configuration, explicitly add -Devaluation-split=test to evaluate the official10,000. Never tune on test accuracy. [Benchmarks](../benchmarks.md) supplies the exact selected seeds/checkpoints and a fixed-study script rather than suggesting a test-driven search.
 

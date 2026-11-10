@@ -34,6 +34,11 @@ zig build flash -Dproject=mnist -Dmnist-fixture=true -Dmnist-epochs=1 -Dapp-name
 
 This is the explicit destructive device-write step; deploy only generates/checks firmware. Synthetic-fixture weights demonstrate transport, not real digit recognition. For a trained model use the same model/checkpoint/preprocessing/format options in deploy, flash and infer-host.
 
+deploy's saved summary identifies the MCU, ELF/BIN and Flash/static RAM/stack
+allowance/margin. These are build measurements/budgets, not physical inference
+timing or stack high-water. e2e independently verifies integer reference outputs;
+classification accuracy comes from evaluate. See the [CLI workflow](../cli.md).
+
 ## Exchange and check — hardware required
 
 ```sh

@@ -43,7 +43,7 @@ cd zinn
 zig version                    # 0.17.0であること
 zig build test
 zig build train                # XORの短い学習
-zig build evaluate             # float評価
+zig build evaluate             # float/整数の分類評価
 zig build quantize             # 整数推論用Zigソース生成
 zig build e2e                  # ホスト整数推論・参照照合
 zig build deploy               # XOR ELF/bin生成・容量検査。書き込みはしない
@@ -71,10 +71,12 @@ pub const Structure = zinn.Definition(2, &.{
 独立パッケージ[examples/project](examples/project/build.zig)は、モデル・CSV・addProjectを使うbuild.zigを含みます。
 
 ```sh
-zig build --build-file examples/project/build.zig train evaluate deploy infer-host simulate-uart
+zig build --build-file examples/project/build.zig train evaluate e2e deploy infer-host simulate-uart
 ```
 
 .zinn、生成.zig、.elf、.bin、入力フレーム、JSONレポートを出力します。deployは生成・検査だけです。書き込みはchzigと実機が必要な明示的flash操作に分離しています。[CSVチュートリアル](docs/tutorials/csv-classifier.md)と[Build API](docs/api/build.md)を参照してください。
+
+共通のtrain/evaluate/e2e/deploy/flashは`-Dproject=xor|mnist|csv`で一貫して対象を選びます（既定xor）。E2EのPASSは整数参照との全logit一致であり、分類精度ではありません。キャッシュ時のサマリー、checkpoint再利用、旧コマンドからの移行は[CLIリファレンス](docs/cli.md)を参照してください。
 
 ## 例とドキュメント
 

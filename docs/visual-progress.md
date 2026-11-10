@@ -1,5 +1,7 @@
 # Visual progress bars
 
+Historical visual-bar verification. For the subsequent command, ETA and summary changes, see [CLI consistency report](cli-consistency-report.md).
+
 Host-only, standard-library implementation, Zig0.17.0. Baseline: `4bae530`.
 Numerical APIs, checkpoint v1, exported model and CSV/JSON formats are unchanged.
 

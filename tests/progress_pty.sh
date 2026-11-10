@@ -19,6 +19,9 @@ run_pty() {
 for width in 40 60 80 120; do
     name="visual-pty-$width-$$"
     command=(bash tests/pty_child.sh "$width" "$zig_bin" build train -Dproject=mnist -Dmnist-fixture=true -Dmnist-epochs=2 "-Dapp-name=$name" -Dprogress=auto --prefix "$results/out")
+    # Preconfigure under CI/plain capabilities. Runtime TTY detection must not
+    # inherit a cached CI/TERM environment from this help-only invocation.
+    CI=true TERM=dumb "$zig_bin" build train -Dproject=mnist -Dmnist-fixture=true -Dmnist-epochs=2 "-Dapp-name=$name" -Dprogress=auto --prefix "$results/out" --help > "$results/help-$width.txt"
     run_pty "$results/$width.log" "${command[@]}"
     grep -Fq $'\033[2K' "$results/$width.log"
     grep -Fq '[#####' "$results/$width.log"

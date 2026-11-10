@@ -52,6 +52,12 @@ zig build e2e -Dcheckpoint=zig-out/models/xor.zinn
 
 Generated integer source: `zig-out/models/xor.zig`. e2e compiles it, runs all four inputs and compares every logit with an independent integer reference. int8/int4 reuse the same float checkpoint.
 
+Common commands consistently honor -Dproject=xor|mnist|csv; default is XOR.
+evaluate reports classification accuracy/loss, while e2e reports exact integer
+reference matches. PASS in e2e is not an accuracy percentage. A selected
+-Dproject-checkpoint skips fitting for evaluate/e2e/deploy. Cached summaries use
+saved metrics and omit a new training time. See the [CLI reference](cli.md).
+
 ## Generate CH32V003 firmware
 
 ```sh

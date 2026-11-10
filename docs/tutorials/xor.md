@@ -14,7 +14,7 @@ zig build e2e -Dcheckpoint=zig-out/models/xor.zinn
 zig build e2e -Dcheckpoint=zig-out/models/xor.zinn -Dweight-format=int4
 ```
 
-Output `.zinn` holds float parameters; generated `.zig` holds quantized parameters and a compile-time model. e2e reports integer logits/class and exact reference agreement. The four training cases also form the verification truth table: this is not generalization evaluation.
+Output `.zinn` holds float parameters; generated `.zig` holds quantized parameters and a compile-time model. e2e summarizes every-logit reference agreement; detailed truth-table logits remain in reports/xor-e2e-progress.log. evaluate separately reports classification accuracy/MSE. The four training cases also form the verification truth table: this is not generalization evaluation. Cached summaries show no new training time. The default project remains XOR; [common CLI selection and checkpoint aliases](../cli.md) apply consistently.
 
 ## API behind the tools
 

@@ -2,8 +2,10 @@
 const std = @import("std");
 pub const terminal_ui = @import("terminal.zig");
 pub const training_ui = @import("training_display.zig");
+pub const summary = @import("summary.zig");
 test {
     _ = training_ui;
+    _ = summary;
 }
 pub const Mode = enum { auto, plain, off };
 pub const Kind = enum { started, updated, epoch, completed, failed };
@@ -49,11 +51,40 @@ pub const Task = struct {
     }
 };
 pub const Stats = struct { elapsed_ns: u64, fraction: ?f64, rate: ?f64, eta_seconds: ?f64 };
+pub fn percent(fraction: f64) u8 {
+    return @intFromFloat(@floor(@min(1, @max(0, fraction)) * 100));
+}
 pub fn measure(event: Event, start_ns: u64, now_ns: u64) Stats {
     const elapsed = now_ns -| start_ns;
     const rate: ?f64 = if (elapsed == 0 or event.done == 0) null else @as(f64, @floatFromInt(event.done)) * 1e9 / @as(f64, @floatFromInt(elapsed));
-    return .{ .elapsed_ns = elapsed, .fraction = if (event.total) |t| (if (t == 0) (if (event.kind == .completed) @as(f64, 1) else @as(f64, 0)) else @min(1, @as(f64, @floatFromInt(event.done)) / @as(f64, @floatFromInt(t)))) else null, .rate = rate, .eta_seconds = if (event.total) |t| (if (rate) |r| @as(f64, @floatFromInt(t -| event.done)) / r else if (event.kind == .completed) @as(f64, 0) else null) else null };
+    const fraction: ?f64 = if (event.total) |t| (if (event.kind == .completed) @as(f64, 1) else if (t == 0) @as(f64, 0) else @min(1, @as(f64, @floatFromInt(event.done)) / @as(f64, @floatFromInt(t)))) else null;
+    // At least one second, 1% of the task and 2..32 completed units. A short
+    // operation never acquires an ETA, even in its completion event.
+    const warm = if (event.total) |t| elapsed >= 1_000_000_000 and t > 0 and event.done >= @min(32, @max(2, t / 100)) and fraction.? >= 0.01 else false;
+    return .{ .elapsed_ns = elapsed, .fraction = fraction, .rate = rate, .eta_seconds = if (warm and event.kind != .failed) (if (rate) |r| @as(f64, @floatFromInt(event.total.? -| event.done)) / r else null) else null };
 }
+pub const Estimator = struct {
+    last_ns: ?u64 = null,
+    last_done: u64 = 0,
+    rate: ?f64 = null,
+    pub fn update(self: *Estimator, event: Event, start: u64, now: u64) Stats {
+        if (event.kind == .started or event.done < self.last_done) self.* = .{};
+        if (self.last_ns) |last| {
+            if (now > last and event.done > self.last_done) {
+                const instant = @as(f64, @floatFromInt(event.done - self.last_done)) * 1e9 / @as(f64, @floatFromInt(now - last));
+                self.rate = if (self.rate) |old| 0.75 * old + 0.25 * instant else instant;
+            }
+        }
+        self.last_ns = now;
+        self.last_done = event.done;
+        var s = measure(event, start, now);
+        if (s.eta_seconds != null) if (self.rate) |r| {
+            s.eta_seconds = @as(f64, @floatFromInt(event.total.? -| event.done)) / r;
+            s.rate = r;
+        };
+        return s;
+    }
+};
 pub const Gate = struct {
     last_ns: ?u64 = null,
     pub fn allow(self: *Gate, now: u64, interval: u64, force: bool) bool {
@@ -73,16 +104,23 @@ fn fitLine(line: []u8, width: usize) []u8 {
     @memcpy(line[end..][0..3], "...");
     return line[0 .. end + 3];
 }
-pub const Cli = struct { args: []const []const u8, mode: Mode, journal: ?[]const u8 = null, receipt: ?[]const u8 = null };
+pub const Cli = struct { args: []const []const u8, mode: Mode, journal: ?[]const u8 = null, receipt: ?[]const u8 = null, summary_path: ?[]const u8 = null, token: []const u8 = "unmonitored" };
 /// Remove only progress flags; leave existing positional CLI arguments unchanged.
 pub fn cli(init: std.process.Init) !Cli {
     const raw = try init.minimal.args.toSlice(init.arena.allocator());
     var args: std.ArrayList([]const u8) = .empty;
-    var mode = std.meta.stringToEnum(Mode, init.environ_map.get("ZINN_PROGRESS") orelse "auto") orelse return error.InvalidProgressMode;
+    const default_mode = std.meta.stringToEnum(Mode, init.environ_map.get("ZINN_PROGRESS") orelse "auto");
+    var mode = default_mode orelse .auto;
+    var explicit_mode = false;
     var quiet = false;
     var journal: ?[]const u8 = null;
     var receipt: ?[]const u8 = null;
+    var summary_path: ?[]const u8 = null;
     for (raw) |arg| {
+        if (std.mem.startsWith(u8, arg, "--summary=")) {
+            summary_path = arg[10..];
+            continue;
+        }
         if (std.mem.startsWith(u8, arg, "--progress-journal=")) {
             journal = arg[19..];
             continue;
@@ -97,23 +135,34 @@ pub fn cli(init: std.process.Init) !Cli {
         }
         if (std.mem.startsWith(u8, arg, "--progress=")) {
             mode = std.meta.stringToEnum(Mode, arg[11..]) orelse return error.InvalidProgressMode;
+            explicit_mode = true;
             continue;
         }
         try args.append(init.arena.allocator(), arg);
     }
-    return .{ .args = try args.toOwnedSlice(init.arena.allocator()), .mode = if (quiet) .off else mode, .journal = journal, .receipt = receipt };
+    if (default_mode == null and !explicit_mode and !quiet) return error.InvalidProgressMode;
+    return .{ .args = try args.toOwnedSlice(init.arena.allocator()), .mode = if (quiet) .off else mode, .journal = journal, .receipt = receipt, .summary_path = summary_path, .token = try sessionToken(init, journal) };
+}
+fn sessionToken(process: std.process.Init, directory: ?[]const u8) ![]const u8 {
+    const dir = directory orelse return "unmonitored";
+    const path = try std.fs.path.join(process.arena.allocator(), &.{ dir, "session" });
+    const token = std.Io.Dir.cwd().readFileAlloc(process.io, path, process.arena.allocator(), .limited(128)) catch return "unmonitored";
+    if (token.len != 32) return "unmonitored";
+    for (token) |c| if (!std.ascii.isHex(c)) return "unmonitored";
+    return token;
+}
+pub fn writeSummary(process: std.process.Init, parsed: Cli, value: summary.Report) !void {
+    const path = parsed.summary_path orelse return;
+    const bytes = try std.json.Stringify.valueAlloc(process.arena.allocator(), value, .{});
+    try std.Io.Dir.cwd().writeFile(process.io, .{ .sub_path = path, .data = bytes });
 }
 /// A build-only receipt identifies execution without changing model artifacts.
 pub fn saveReceipt(init_process: std.process.Init, parsed: Cli) !void {
     const path = parsed.receipt orelse return;
-    const token = if (parsed.journal) |dir| blk: {
-        const session = try std.fs.path.join(init_process.arena.allocator(), &.{ dir, "session" });
-        break :blk std.Io.Dir.cwd().readFileAlloc(init_process.io, session, init_process.arena.allocator(), .limited(128)) catch "unmonitored";
-    } else "unmonitored";
-    try std.Io.Dir.cwd().writeFile(init_process.io, .{ .sub_path = path, .data = token });
+    try std.Io.Dir.cwd().writeFile(init_process.io, .{ .sub_path = path, .data = parsed.token });
 }
 pub const Renderer = struct {
-    const Slot = struct { name: [64]u8 = undefined, len: usize = 0, start_ns: u64 = 0, gate: Gate = .{}, log_gate: Gate = .{}, epoch_gate: Gate = .{}, node: std.Progress.Node = .none };
+    const Slot = struct { name: [64]u8 = undefined, len: usize = 0, start_ns: u64 = 0, gate: Gate = .{}, log_gate: Gate = .{}, epoch_gate: Gate = .{}, estimator: Estimator = .{}, node: std.Progress.Node = .none };
     io: std.Io,
     mode: Mode,
     tty: bool = false,
@@ -140,11 +189,14 @@ pub const Renderer = struct {
         if (self.mode != .off) self.record(.{ .name = "Model", .detail = detail });
     }
     pub fn initJournal(process: std.process.Init, mode: Mode, directory: ?[]const u8) Renderer {
+        return initJournalToken(process, mode, directory, sessionToken(process, directory) catch "unmonitored");
+    }
+    pub fn initJournalToken(process: std.process.Init, mode: Mode, directory: ?[]const u8, token: []const u8) Renderer {
         var self: Renderer = if (directory == null) init(process, mode) else .{ .io = process.io, .mode = mode };
         if (directory) |dir| {
-            const path = std.fs.path.join(process.arena.allocator(), &.{ dir, "live.log" }) catch return self;
+            const path = std.fs.path.join(process.arena.allocator(), &.{ dir, std.fmt.allocPrint(process.arena.allocator(), "live-{s}.log", .{token}) catch return self }) catch return self;
             self.journal = std.Io.Dir.cwd().createFile(process.io, path, .{}) catch null;
-            const events_path = std.fs.path.join(process.arena.allocator(), &.{ dir, "events.jsonl" }) catch return self;
+            const events_path = std.fs.path.join(process.arena.allocator(), &.{ dir, std.fmt.allocPrint(process.arena.allocator(), "events-{s}.jsonl", .{token}) catch return self }) catch return self;
             self.events = std.Io.Dir.cwd().createFile(process.io, events_path, .{}) catch null;
         }
         return self;
@@ -212,7 +264,14 @@ pub const Renderer = struct {
             slot.node = .none;
         }
         if (!slot.log_gate.allow(now, if (self.tty) 200_000_000 else 5_000_000_000, force)) return;
-        const stats = measure(event, slot.start_ns, now);
+        const stats = slot.estimator.update(event, slot.start_ns, now);
+        if (event.kind == .failed) {
+            if (self.terminal) |*line| line.finish();
+            if (self.active) std.Io.File.stderr().writeStreamingAll(self.io, "\n") catch {};
+            self.active = false;
+            std.debug.print("failed {s}: {s}\n", .{ event.name, event.detail });
+            return;
+        }
         const download_event = std.mem.eql(u8, event.unit, "B") or std.mem.eql(u8, event.unit, "files");
         if (self.terminal) |*line| {
             const current_width = line.width();
@@ -243,14 +302,13 @@ pub const Renderer = struct {
             out.print("{s} {s} ", .{ @tagName(event.kind), if (inplace) event.name[0..@min(20, event.name.len)] else event.name }) catch return;
             if (event.total) |t| {
                 if (inplace) {
-                    out.writeAll("[") catch return;
-                    for (0..10) |i| out.writeByte(if (@as(f64, @floatFromInt(i)) < stats.fraction.? * 10) '#' else '-') catch return;
-                    out.writeAll("] ") catch return;
+                    terminal_ui.bar(&out, stats.fraction, 10) catch return;
+                    out.writeByte(' ') catch return;
                 }
-                out.print("{d:.0}% {d}/{d} ", .{ 100 * stats.fraction.?, event.done, t }) catch return;
+                out.print("{d}% {d}/{d} ", .{ percent(stats.fraction.?), event.done, t }) catch return;
             } else out.print("{d}/? ", .{event.done}) catch return;
             out.print("elapsed={d:.1}s ", .{@as(f64, @floatFromInt(stats.elapsed_ns)) / 1e9}) catch return;
-            if (stats.eta_seconds) |eta| out.print("eta={d:.1}s ", .{eta}) catch return else out.writeAll("eta=? ") catch return;
+            if (stats.eta_seconds) |eta| out.print("eta={d:.1}s ", .{eta}) catch return;
             if (stats.rate) |rate| out.print("rate={d:.1}{s}/s ", .{ rate, event.unit }) catch return;
             for (event.metrics) |metric| {
                 if (std.math.isFinite(metric.value) and @floor(metric.value) == metric.value) out.print("{s}={d:.0} ", .{ metric.name, metric.value }) catch break else out.print("{s}={d:.5} ", .{ metric.name, metric.value }) catch break;
@@ -336,4 +394,23 @@ test "clipping never displays a partial ETA as a different number" {
     var text = "run 50% eta=123.4s rate=12.5/s".*;
     const clipped = fitLine(&text, 17);
     try std.testing.expectEqualStrings("run 50%...", clipped);
+}
+test "ETA warm-up, smoothing and zero/one/full progress boundaries" {
+    const s = measure(.{ .name = "verify", .done = 1, .total = 5000 }, 0, 500_000_000);
+    try std.testing.expectEqual(@as(?f64, null), s.eta_seconds);
+    try std.testing.expectEqual(@as(u8, 0), percent(s.fraction.?));
+    try std.testing.expectEqual(@as(?f64, null), measure(.{ .name = "verify", .kind = .completed, .done = 5000, .total = 5000 }, 0, 500_000_000).eta_seconds);
+    try std.testing.expectEqual(@as(u8, 99), percent(measure(.{ .name = "verify", .done = 4999, .total = 5000 }, 0, 2_000_000_000).fraction.?));
+    try std.testing.expectEqual(@as(u8, 100), percent(measure(.{ .name = "verify", .kind = .completed, .done = 5000, .total = 5000 }, 0, 2_000_000_000).fraction.?));
+    var bytes: [64]u8 = undefined;
+    var out: std.Io.Writer = .fixed(&bytes);
+    try terminal_ui.bar(&out, s.fraction, 20);
+    try std.testing.expect(std.mem.indexOfScalar(u8, out.buffered(), '#') == null);
+    var estimator: Estimator = .{};
+    _ = estimator.update(.{ .name = "task", .kind = .started, .total = 5000 }, 0, 0);
+    const initial = estimator.update(.{ .name = "task", .done = 100, .total = 5000 }, 0, 1_000_000_000);
+    const fast = estimator.update(.{ .name = "task", .done = 1000, .total = 5000 }, 0, 1_100_000_000);
+    try std.testing.expect(initial.eta_seconds != null);
+    try std.testing.expect(fast.rate.? > initial.rate.? and fast.rate.? < 9000);
+    try std.testing.expectEqual(@as(?f64, null), measure(.{ .name = "unknown", .done = 100 }, 0, 2_000_000_000).eta_seconds);
 }

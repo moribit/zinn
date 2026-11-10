@@ -9,6 +9,8 @@ pub const Dataset = union(enum) {
 };
 pub const Training = struct { epochs: usize = 20, batch: usize = 32, rate: f32 = 0.05, seed: u32 = 42, split_seed: u32 = 24301, validation_count: ?usize = null, decay_every: usize = 10, decay: f32 = 0.3, limit: usize = 60000 };
 pub const Options = struct {
+    /// Set for nonstandard build script filenames; defaults to build.zig.
+    build_file: ?std.Build.LazyPath = null,
     progress: progress.Mode = .auto,
     name: []const u8,
     model: std.Build.LazyPath,
@@ -39,7 +41,7 @@ pub const Options = struct {
     sequence: u16 = 1,
     request: enum { infer, info, benchmark } = .infer,
 };
-pub const Artifacts = struct { checkpoint: std.Build.LazyPath, source: std.Build.LazyPath, metadata: std.Build.LazyPath, elf: std.Build.LazyPath, bin: std.Build.LazyPath, train: *std.Build.Step, evaluate: *std.Build.Step, deploy: *std.Build.Step, flash: *std.Build.Step, infer_host: *std.Build.Step, stack_audit: *std.Build.Step, simulate: *std.Build.Step };
+pub const Artifacts = struct { checkpoint: std.Build.LazyPath, source: std.Build.LazyPath, metadata: std.Build.LazyPath, elf: std.Build.LazyPath, bin: std.Build.LazyPath, train: *std.Build.Step, evaluate: *std.Build.Step, deploy: *std.Build.Step, flash: *std.Build.Step, infer_host: *std.Build.Step, stack_audit: *std.Build.Step, simulate: *std.Build.Step, e2e: ?*std.Build.Step = null };
 fn module(b: *std.Build, pkg: *std.Build, target: std.Build.ResolvedTarget, optimize: std.lang.Optimize) *std.Build.Module {
     return b.createModule(.{ .root_source_file = pkg.path("src/root.zig"), .target = target, .optimize = optimize });
 }
@@ -106,7 +108,8 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     const curve = fitting.captureStdOut(.{});
     const fit_log = fitting.captureStdErr(.{});
     const train_name = b.fmt("{s}train", .{options.step_prefix});
-    const training_steps = progress.training(b, pkg, fitting, options.progress, options.name, train_name, b.fmt("training/{s}.zinn", .{options.name}));
+    const build_file = options.build_file orelse b.path("build.zig");
+    const training_steps = progress.operation(b, pkg, fitting, options.progress, options.name, train_name, b.fmt("training/{s}.zinn", .{options.name}), .train, build_file);
     const train = training_steps.backend;
     train.dependOn(&b.addInstallFile(checkpoint, b.fmt("training/{s}.zinn", .{options.name})).step);
     train.dependOn(&b.addInstallFile(curve, b.fmt("reports/{s}-training.csv", .{options.name})).step);
@@ -123,7 +126,9 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     const metadata = exporting.addOutputFileArg(b.fmt("{s}.json", .{options.name}));
     _ = exporting.captureStdOut(.{});
     const export_log = exporting.captureStdErr(.{});
-    const evaluate = b.step(b.fmt("{s}evaluate", .{options.step_prefix}), "Evaluate selected split and emit integer model/metadata");
+    const evaluation_steps = progress.operation(b, pkg, exporting, options.progress, options.name, b.fmt("{s}evaluate", .{options.step_prefix}), b.fmt("reports/{s}-model.json", .{options.name}), .evaluate, build_file);
+    const evaluate = evaluation_steps.backend;
+    if (options.checkpoint == null) evaluate.dependOn(training_steps.backend);
     evaluate.dependOn(&b.addInstallFile(source, b.fmt("models/{s}-{s}.zig", .{ options.name, @tagName(options.format) })).step);
     evaluate.dependOn(&b.addInstallFile(metadata, b.fmt("reports/{s}-model.json", .{options.name})).step);
     evaluate.dependOn(&b.addInstallFile(export_log, b.fmt("reports/{s}-export-progress.log", .{options.name})).step);
@@ -136,7 +141,8 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     for (train_files) |file| verification.addFileArg(file);
     for (eval_files) |file| verification.addFileArg(file);
     verification.addArgs(&.{ b.fmt("{d}", .{options.calibration_limit}), b.fmt("{d}", .{options.evaluation_limit}) });
-    evaluate.dependOn(&verification.step);
+    const verification_steps = progress.operation(b, pkg, verification, options.progress, options.name, b.fmt("{s}e2e", .{options.step_prefix}), b.fmt("models/{s}-{s}.zig", .{ options.name, @tagName(options.format) }), .e2e, build_file);
+    verification_steps.backend.dependOn(evaluate);
     const fw = ch32.addFirmware(b, hal, .{ .name = options.name, .root_source_file = options.firmware orelse pkg.path("examples/mnist/uart.zig") });
     fw.root_module.strip = false;
     fw.step.name = b.fmt("Zinn: firmware build {s}", .{options.name});
@@ -149,11 +155,9 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     const board = b.createModule(.{ .root_source_file = options.board_adapter orelse pkg.path("src/targets/ch32v003_uart.zig"), .target = ch32.ch32Target(b), .optimize = .small });
     board.addImport("ch32fun", app.import_table.get("ch32fun").?);
     app.addImport("board_adapter", board);
-    const deploy = b.step(b.fmt("{s}deploy", .{options.step_prefix}), "Emit UART production ELF/bin and validate final capacity; never flashes");
-    deploy.dependOn(evaluate);
-    deploy.dependOn(&b.addInstallFile(fw.getEmittedBin(), b.fmt("firmware/{s}.elf", .{options.name})).step);
+    const elf_install = b.addInstallFile(fw.getEmittedBin(), b.fmt("firmware/{s}.elf", .{options.name}));
     const binary = fw.addObjCopy(.{ .format = .binary, .basename = b.fmt("{s}.bin", .{options.name}) });
-    deploy.dependOn(&b.addInstallFile(binary.getOutput(), b.fmt("firmware/{s}.bin", .{options.name})).step);
+    const bin_install = b.addInstallFile(binary.getOutput(), b.fmt("firmware/{s}.bin", .{options.name}));
     const size_tool = b.addExecutable(.{ .name = b.fmt("{s}-size", .{options.name}), .root_module = b.createModule(.{ .root_source_file = pkg.path("tools/size.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{.{ .name = "budget", .module = b.createModule(.{ .root_source_file = pkg.path("src/budget.zig"), .target = b.graph.host, .optimize = .safe }) }} }) });
     const size = b.addRunArtifact(size_tool);
     size_tool.root_module.addImport("progress", b.createModule(.{ .root_source_file = pkg.path("src/host/progress.zig"), .target = b.graph.host, .optimize = .safe }));
@@ -162,12 +166,17 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     size.addArgs(&.{ b.fmt("{d}", .{options.flash_bytes}), b.fmt("{d}", .{options.ram_bytes}), b.fmt("{d}", .{options.stack_bytes}), b.fmt("{d}", .{options.reserved_flash_bytes}) });
     const size_json = size.captureStdOut(.{});
     const size_text = size.captureStdErr(.{});
+    const deployment_steps = progress.operation(b, pkg, size, options.progress, options.name, b.fmt("{s}deploy", .{options.step_prefix}), b.fmt("firmware/{s}.elf", .{options.name}), .deploy, build_file);
+    const deploy = deployment_steps.backend;
+    size.step.dependOn(verification_steps.backend);
+    deploy.dependOn(&elf_install.step);
+    deploy.dependOn(&bin_install.step);
     deploy.dependOn(&b.addInstallFile(size_json, b.fmt("reports/{s}-memory.json", .{options.name})).step);
     deploy.dependOn(&b.addInstallFile(size_text, b.fmt("reports/{s}-memory.txt", .{options.name})).step);
     const flash = b.step(b.fmt("{s}flash", .{options.step_prefix}), "Explicitly flash generated binary with chzig/WCH-LinkE");
     const flashing = b.addSystemCommand(&.{ "chzig", "flash", "--no-build", "--bin" });
     flashing.addFileArg(binary.getOutput());
-    flashing.step.dependOn(deploy);
+    flashing.step.dependOn(deployment_steps.display);
     flash.dependOn(&flashing.step);
     const frame_tool = b.addExecutable(.{ .name = b.fmt("{s}-frame", .{options.name}), .root_module = b.createModule(.{ .root_source_file = pkg.path("tools/project_frame.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{ .{ .name = "zinn", .module = core }, .{ .name = "trained_model", .module = generated } } }) });
     const frame = b.addRunArtifact(frame_tool);
@@ -199,5 +208,5 @@ pub fn addProject(b: *std.Build, dependency: ?*std.Build.Dependency, options: Op
     stack_run.addArgs(&.{ "runtime.startup._start_c", b.fmt("{d}", .{options.stack_bytes}) });
     const stack_audit = b.step(b.fmt("{s}stack-audit", .{options.step_prefix}), "Optional normal-path stack estimate using LLVM disassembly");
     stack_audit.dependOn(&stack_run.step);
-    return .{ .checkpoint = checkpoint, .source = source, .metadata = metadata, .elf = fw.getEmittedBin(), .bin = binary.getOutput(), .train = training_steps.display, .evaluate = evaluate, .deploy = deploy, .flash = flash, .infer_host = infer_host, .stack_audit = stack_audit, .simulate = simulate };
+    return .{ .checkpoint = checkpoint, .source = source, .metadata = metadata, .elf = fw.getEmittedBin(), .bin = binary.getOutput(), .train = training_steps.display, .evaluate = evaluation_steps.display, .deploy = deployment_steps.display, .flash = flash, .infer_host = infer_host, .stack_audit = stack_audit, .simulate = simulate, .e2e = verification_steps.display };
 }

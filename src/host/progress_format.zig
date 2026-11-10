@@ -20,7 +20,7 @@ fn stats(w: *std.Io.Writer, e: p.Event, s: p.Stats, rate: bool, eta: bool) !void
     const unit = scale(@floatFromInt(e.total orelse e.done));
     if (e.total) |total| {
         if (unit.factor == 1) try w.print("{d}/{d}B", .{ e.done, total }) else try w.print("{d:.2}/{d:.2}{s}", .{ @as(f64, @floatFromInt(e.done)) / unit.factor, @as(f64, @floatFromInt(total)) / unit.factor, unit.unit });
-        try w.print(" {d:.0}%", .{100 * s.fraction.?});
+        try w.print(" {d}%", .{p.percent(s.fraction.?)});
     } else try amount(w, @floatFromInt(e.done));
     if (rate) if (s.rate) |r| {
         try w.writeByte(' ');
@@ -28,7 +28,7 @@ fn stats(w: *std.Io.Writer, e: p.Event, s: p.Stats, rate: bool, eta: bool) !void
         try w.writeAll("/s");
     };
     if (eta and e.total != null) {
-        if (s.eta_seconds) |seconds| try w.print(" ETA {d:.0}s", .{seconds}) else try w.writeAll(" ETA ?");
+        if (s.eta_seconds) |seconds| try w.print(" ETA {d:.0}s", .{seconds});
     }
 }
 fn name(w: *std.Io.Writer, text: []const u8, width: usize) !void {
@@ -59,7 +59,7 @@ pub fn format(buffer: []u8, e: p.Event, s: p.Stats, columns: usize) ![]u8 {
             try out.print("MNIST download failed: {s}", .{e.detail});
             return out.buffered();
         }
-        try out.print("MNIST {d}/{d}: {d:.0} downloaded, {d:.0} cached", .{ e.done, e.total orelse e.done, metric(e, "downloaded"), metric(e, "cached") });
+        try p.summary.download(&out, e.done, e.total orelse e.done, metric(e, "downloaded"), metric(e, "cached"));
         if (out.end + 10 <= columns) try out.print(" ({d:.1}s)", .{@as(f64, @floatFromInt(s.elapsed_ns)) / 1e9});
         return out.buffered();
     }
@@ -110,7 +110,7 @@ pub fn format(buffer: []u8, e: p.Event, s: p.Stats, columns: usize) ![]u8 {
     return out.buffered();
 }
 test "download layout preserves bytes, percentage, human speed and ETA at 40/80 columns" {
-    const e: p.Event = .{ .name = "train-images-idx3-ubyte.gz", .done = 5 * 1024 * 1024, .total = 10 * 1024 * 1024, .unit = "B", .kind = .completed };
+    const e: p.Event = .{ .name = "train-images-idx3-ubyte.gz", .done = 5 * 1024 * 1024, .total = 10 * 1024 * 1024, .unit = "B", .kind = .updated };
     const s = p.measure(e, 0, 1_000_000_000);
     var buffer: [1024]u8 = undefined;
     inline for (.{ 40, 60, 80 }) |width| {
@@ -136,7 +136,7 @@ test "cached files and aggregate summaries fit narrow displays without fake rate
     try std.testing.expectEqualStrings("cached train-images-idx3-ubyte.gz\n9.45MiB", line);
     const all: p.Event = .{ .name = "MNIST", .kind = .completed, .done = 4, .total = 4, .unit = "files", .metrics = &.{ .{ .name = "downloaded", .value = 1 }, .{ .name = "cached", .value = 3 } } };
     const summary = try format(&buffer, all, p.measure(all, 0, 1_000_000_000), 40);
-    try std.testing.expectEqualStrings("MNIST 4/4: 1 downloaded, 3 cached", summary);
+    try std.testing.expectEqualStrings("completed MNIST 4/4: 1 new, 3 cached", summary);
     try std.testing.expectEqualStrings("", try format(&buffer, .{ .name = "MNIST", .unit = "files", .done = 1 }, p.measure(all, 0, 1), 40));
 }
 test "visual download fits physical terminal columns and drops whole optional fields" {

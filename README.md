@@ -47,7 +47,7 @@ cd zinn
 zig version                    # Must be 0.17.0
 zig build test
 zig build train                # Short XOR training
-zig build evaluate             # Float evaluation
+zig build evaluate             # Float/integer classification evaluation
 zig build quantize             # Generate integer Zig source
 zig build e2e                  # Host integer inference and reference comparison
 zig build deploy               # XOR ELF/bin + capacity check; NEVER flashes
@@ -75,10 +75,15 @@ This exact snippet is [compiled by documentation checks](examples/docs/model.zig
 [examples/project](examples/project/build.zig) is an independent Zig package with its own model and CSV files. Its build script calls `zinn.addProject(b, dependency, options)`:
 
 ```sh
-zig build --build-file examples/project/build.zig train evaluate deploy infer-host simulate-uart
+zig build --build-file examples/project/build.zig train evaluate e2e deploy infer-host simulate-uart
 ```
 
 Outputs include `.zinn`, generated `.zig`, `.elf`, `.bin`, input frames and JSON reports. `deploy` builds/checks capacity; a separate explicit `flash` step requires chzig and hardware. See [Custom CSV Classifier](docs/tutorials/csv-classifier.md) and the [Build API](docs/api/build.md).
+
+The common train/evaluate/e2e/deploy/flash workflow consistently selects
+`-Dproject=xor|mnist|csv` (default xor). E2E compares every integer logit with its
+reference; its PASS is not classification accuracy. See the [CLI reference and
+legacy migration](docs/cli.md) for cached summaries and checkpoint reuse.
 
 ## Examples
 

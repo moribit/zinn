@@ -15,8 +15,10 @@ pub const State = struct {
     validation: ?f64 = null,
     best: ?f64 = null,
     start: u64 = 0,
+    estimator: p.Estimator = .{},
     pub fn update(self: *State, e: p.Event, now: u64) void {
         if (e.kind == .started) self.* = .{ .start = now };
+        _ = self.estimator.update(e, self.start, now);
         for (e.metrics) |m| {
             if (!std.math.isFinite(m.value)) continue;
             if (std.mem.eql(u8, m.name, "epoch")) self.epoch = m.value;
@@ -38,18 +40,22 @@ pub const State = struct {
     }
     pub fn format(self: State, buffer: []u8, e: p.Event, now: u64, width: usize) ![]u8 {
         var w: std.Io.Writer = .fixed(buffer);
-        const s = p.measure(e, self.start, now);
+        var s = p.measure(e, self.start, now);
+        if (s.eta_seconds != null) if (self.estimator.rate) |rate| {
+            s.rate = rate;
+            s.eta_seconds = @as(f64, @floatFromInt(e.total.? -| e.done)) / rate;
+        };
         if (self.epochs > 0) try w.print("E{d:.0}/{d:.0} ", .{ self.epoch, self.epochs }) else try w.writeAll("training ");
         if (width >= 76 and self.batches > 0) try field(&w, width, "B{d:.0}/{d:.0} ", .{ self.batch, self.batches });
         try terminal.bar(&w, s.fraction, if (width >= 116) 20 else if (width >= 56) 10 else 5);
-        if (s.fraction) |f| try w.print(" {d:.0}%", .{100 * f});
+        if (s.fraction) |f| try w.print(" {d}%", .{p.percent(f)});
         if (self.loss) |loss| try field(&w, width, " L{d:.3}", .{loss});
         if (width >= 56) {
             if (self.validation) |v| try field(&w, width, " V{d:.1}%", .{v});
             if (self.best) |v| try field(&w, width, " Best{d:.1}%", .{v});
         }
         if (width >= 76) {
-            if (s.eta_seconds) |eta| try field(&w, width, " ETA {d:.0}s", .{eta}) else try field(&w, width, " ETA ?", .{});
+            if (s.eta_seconds) |eta| try field(&w, width, " ETA {d:.0}s", .{eta});
         }
         if (w.end <= width) return w.buffered();
         const end = std.mem.lastIndexOfScalar(u8, buffer[0..width], ' ') orelse width;
