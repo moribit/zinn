@@ -69,3 +69,60 @@ For custom script names, set `.build_file=b.path("custom.build.zig")`. The [cust
 | UART/check | -Dinput-bin, -Dsample-index=0, -Dsequence=1, -Drequest=infer/info/benchmark, -Dexpected-json, -Dresponse-bin |
 
 Root common CSV currently uses explicit CSV evaluation and disables rate decay (validation_count0); use external addProject for a CSV training validation partition. Dedicated legacy commands/output paths are explained in [Getting Started](../getting-started.md) and historical notes; do not assume their XOR output paths match common projects. Standard optimize spelling is -Doptimize=safe in Zig0.17.0. docs-check is an offline link/API sample check.
+
+## Lightweight model generation
+
+`addModel(b:*std.Build, dependency:?*std.Build.Dependency, options:ModelOptions) ModelArtifacts`
+creates only host fit/export/reference tools. It never requests a HAL, creates a
+firmware, attaches Service or flashes. The actual return type is defined in
+[model.zig](../../build_support/model.zig); fields/methods below are public.
+
+ModelOptions shares the existing project fields: name/model/dataset, training,
+format, evaluation, checkpoint, calibration_limit/evaluation_limit, preprocessing
+and built-in shape settings, progress and build_file. Defaults match addProject.
+Its optional step_prefix defaults to NAME- instead of the project default empty
+prefix. Names must be nonempty and unique within the owning Build.
+
+| Result | Purpose |
+|---|---|
+| source: LazyPath | Generated integer Zig source in native Build cache |
+| checkpoint / selected_checkpoint: LazyPath | Configured fit output / actual consumer checkpoint |
+| metadata: LazyPath | Existing model JSON report |
+| format: Format | int8 or int4 |
+| train / evaluate / generate / e2e: *Step | Explicit model-only workflow steps |
+| createModule(b,target,optimize) *Module | Consumer-target generated module, using shared inference core |
+| createModuleWithCore(b,core) *Module | Generated module using an existing zinn/inference source owner |
+
+The graph's host_core/host_generated and backend fields support addProject; they
+are not target modules to reuse in MCU firmware. Source LazyPaths automatically
+carry tool/data/checkpoint dependencies into consumer compilation. generate runs
+evaluation/calibration/export; it does not also run independent verification.
+e2e performs that verification using the shared exported source.
+
+Errors follow normal Build failure propagation: bad model structure/quantization
+at compile time, malformed data/checkpoint or fitting/export errors at host Run
+time. Numerical formats and captured stdout remain unchanged.
+
+`addInferenceModule(b,dependency,target,optimize) *std.Build.Module` returns a
+shared integer core for the consumer target. Use the same Module with
+createModuleWithCore if the app imports the core too. The dependency also exports
+zinn_infer as a native/default package module. Dependency builds default to
+library-only=true; root checkout workflows retain their full configuration.
+
+## Final ELF checks for caller-owned firmware
+
+`addMemoryCheck(b,dependency,options:MemoryOptions) Check` accepts name and elf
+LazyPath, flash_bytes=16384, ram_bytes=2048, reserved_flash_bytes=64,
+stack_bytes=512, isr_bytes=0, flash_origin=0, ram_origin=0x20000000,
+target_name="CH32V003" and progress=.auto. Origins/limits support ELF32 little
+endian memory maps; the label alone does not establish board support.
+
+Check exposes step:*Step, json/text:LazyPath and run:*Run (for shared preset
+integration). Attach step to the caller's install/check graph. It inspects all
+load segments of the **final application ELF** and fails on invalid placement,
+Flash/RAM overflow, overlapping regions or arithmetic-invalid allowances.
+The existing JSON stack allowance field combines stack_bytes+isr_bytes; neither
+is measured. No firmware/runtime/objcopy/flash step is created by this function.
+
+See [integration](../integration.md), [host tutorial](../tutorials/host-integration.md)
+and [CH32 tutorial](../tutorials/ch32-integration.md) for complete executable builds.

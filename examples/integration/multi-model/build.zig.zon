@@ -1,0 +1,1 @@
+.{ .name = .integration_multi_model, .fingerprint = 0xf455b2a0e916bec0, .version = "0.1.0", .minimum_zig_version = "0.17.0", .dependencies = .{ .zinn = .{ .path = "../../.." } }, .paths = .{ "build.zig", "build.zig.zon", "main.zig", "model.zig", "other_model.zig", "train.csv", "validation.csv" } }

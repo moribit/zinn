@@ -1,0 +1,1 @@
+.{ .name = .integration_host_app, .fingerprint = 0x2dad12c841f55e32, .version = "0.1.0", .minimum_zig_version = "0.17.0", .dependencies = .{ .zinn = .{ .path = "../../.." } }, .paths = .{ "build.zig", "build.zig.zon", "main.zig", "portable.zig", "library.zig", "model.zig", "train.csv", "validation.csv" } }

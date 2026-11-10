@@ -78,6 +78,22 @@ zig build --build-file examples/project/build.zig train evaluate e2e deploy infe
 
 共通のtrain/evaluate/e2e/deploy/flashは`-Dproject=xor|mnist|csv`で一貫して対象を選びます（既定xor）。E2EのPASSは整数参照との全logit一致であり、分類精度ではありません。キャッシュ時のサマリー、checkpoint再利用、旧コマンドからの移行は[CLIリファレンス](docs/cli.md)を参照してください。
 
+## 既存アプリへの組み込み
+
+`addModel()`はファームウェアを作らず、学習・評価・モデル生成だけを行います。
+生成モデルは利用先ターゲット用Moduleとして通常の`root_module.addImport()`で追加し、
+既存のmainループ・HAL・入出力を維持できます。`addInferenceModule()`は整数推論のみ、
+`addMemoryCheck()`は既存アプリ全体の最終ELF容量を検査します。
+従来の`addProject()`はUART／デプロイを含む一括ワークフローとして利用できます。
+
+```sh
+zig build --build-file examples/integration/host-app/build.zig sensor-generate sensor-e2e run
+zig build --build-file examples/integration/ch32-existing-app/build.zig
+zig build --build-file examples/integration/multi-model/build.zig run
+```
+
+実機や書き込みは不要です。[組み込み方法とBuild例](docs/integration.md)を参照してください。
+
 ## 例とドキュメント
 
 - [XOR](docs/tutorials/xor.md)：学習・生成・整数推論とGolden Test。

@@ -1,3 +1,13 @@
+pub const ModelArtifacts = @import("build_support/model.zig").Artifacts;
+pub const MemoryCheck = @import("build_support/memory.zig").Check;
+/// Consumer-target inference module, shared by generated models.
+pub fn addInferenceModule(b: *std.Build, dependency: ?*std.Build.Dependency, target: std.Build.ResolvedTarget, optimize: std.lang.Optimize) *std.Build.Module {
+    return @import("build_support/model.zig").inferenceModule(b, if (dependency) |d| d.builder else b, target, optimize);
+}
+pub const addMemoryCheck = @import("build_support/memory.zig").addMemoryCheck;
+pub const MemoryOptions = @import("build_support/memory.zig").Options;
+pub const addModel = @import("build_support/model.zig").addModel;
+pub const ModelOptions = @import("build_support/model.zig").Options;
 pub const addProject = @import("build_support/project.zig").addProject;
 pub const ProjectOptions = @import("build_support/project.zig").Options;
 pub const ProgressMode = @import("build_support/progress.zig").Mode;
@@ -25,6 +35,8 @@ pub fn build(b: *std.Build) void {
     const e2e_alias = b.step("e2e", "Verify selected project's integer logits against its independent reference");
     const build_file = b.path(b.option([]const u8, "project-build-file", "Build script for presenter child builds (default build.zig)") orelse "build.zig");
     const core = b.addModule("zinn", .{ .root_source_file = b.path("src/root.zig"), .target = target, .optimize = optimize });
+    _ = b.addModule("zinn_infer", .{ .root_source_file = b.path("src/infer.zig"), .target = target, .optimize = optimize });
+    if (b.option(bool, "library-only", "Configure only exported library modules (default for dependency use)") orelse (b.dep_prefix.len != 0)) return;
     const host_core = coreModule(b, b.graph.host, optimize);
     const progress_tools = b.step("progress-tools", "Install optional host progress fixture and overhead benchmark");
     inline for (.{ .{ "progress-demo", "tools/progress_demo.zig" }, .{ "progress-benchmark", "tools/progress_bench.zig" } }) |spec| {

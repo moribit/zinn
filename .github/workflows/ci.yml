@@ -15,7 +15,7 @@ jobs:
         with:
           version: 0.17.0
       - run: zig version
-      - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/docs examples/project/build.zig examples/project/custom.build.zig examples/project/build.zig.zon examples/project/model.zig
+      - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/docs examples/project/build.zig examples/project/custom.build.zig examples/project/build.zig.zon examples/project/model.zig examples/integration
       - run: zig build docs-check
       - run: zig build test --summary all 2>&1 | tee test-results-debug.txt
       - run: zig build test -Doptimize=safe --summary all 2>&1 | tee test-results-safe.txt
@@ -57,6 +57,8 @@ jobs:
           done
       - run: zig build eval -Dcheckpoint=zig-out/models/xor.zinn
       - run: zig build firmware firmware-trained firmware-production deploy
+      - name: Lightweight external model integration
+        run: bash tests/integration.sh zig integration-results
       - name: External project Build API
         run: zig build --build-file examples/project/build.zig train evaluate deploy infer-host simulate-uart
       - name: Check memory budgets (preserve pipeline failures)
@@ -92,4 +94,5 @@ jobs:
             progress-*.log
             progress-cli-results/
             cli-consistency-results/
+            integration-results/
             progress-pty-results/

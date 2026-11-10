@@ -1,0 +1,1 @@
+.{ .name = .integration_ch32_existing_app, .fingerprint = 0x5cfc66b12dbd93f1, .version = "0.1.0", .minimum_zig_version = "0.17.0", .dependencies = .{ .zinn = .{ .path = "../../.." }, .ch32fun_zig = .{ .path = "../../../vendor/ch32fun_zig" } }, .paths = .{ "build.zig", "build.zig.zon", "main.zig", "model.zig", "train.csv", "validation.csv" } }

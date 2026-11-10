@@ -8,13 +8,17 @@ pub fn main(init: std.process.Init) !void {
     defer renderer.deinit();
     var task = renderer.observer().task("Memory budget verification", null);
     errdefer task.fail("ELF memory verification failed");
-    if (args.len != 2 and args.len != 6) return error.ExpectedElfAndOptionalFlashRamStackReserved;
+    if (args.len != 2 and args.len != 6 and args.len != 9) return error.ExpectedElfAndOptionalFlashRamStackReserved;
     var target: budget.Target = .{};
-    if (args.len == 6) {
+    if (args.len >= 6) {
         target.flash_bytes = try std.fmt.parseInt(u32, args[2], 10);
         target.ram_bytes = try std.fmt.parseInt(u32, args[3], 10);
         target.stack_bytes = try std.fmt.parseInt(u32, args[4], 10);
         target.reserved_flash_bytes = try std.fmt.parseInt(u32, args[5], 10);
+    }
+    if (args.len == 9) {
+        target.flash_origin = try std.fmt.parseInt(u32, args[6], 10);
+        target.ram_origin = try std.fmt.parseInt(u32, args[7], 10);
     }
     const data = try std.Io.Dir.cwd().readFileAlloc(init.io, args[1], init.arena.allocator(), .limited(16 * 1024 * 1024));
     const report = try budget.inspect(data, target);
@@ -36,6 +40,6 @@ pub fn main(init: std.process.Init) !void {
     }, .{});
     try std.Io.File.stdout().writeStreamingAll(init.io, json);
     task.finish();
-    try progress.writeSummary(init, parsed, .{ .kind = .deploy, .target = "CH32V003", .flash = report.flash, .flash_limit = target.flash_bytes - target.reserved_flash_bytes, .static_ram = report.static_ram, .stack_allowance = target.stack_bytes, .ram_margin = target.ram_bytes - report.static_ram - target.stack_bytes });
+    try progress.writeSummary(init, parsed, .{ .kind = .deploy, .target = if (args.len == 9) args[8] else "CH32V003", .flash = report.flash, .flash_limit = target.flash_bytes - target.reserved_flash_bytes, .static_ram = report.static_ram, .stack_allowance = target.stack_bytes, .ram_margin = target.ram_bytes - report.static_ram - target.stack_bytes });
     try progress.saveReceipt(init, parsed);
 }

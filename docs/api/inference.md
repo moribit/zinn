@@ -35,3 +35,17 @@ M.infer(&.{ 3, 9 }, &out, &ws);
 ## Packed int4
 
 `zinn.lowbit.Format` is int8/int4. For int4 use format=.int4,packed_weights and no int8 weights. Nibble0 is the first weight, nibble1 the next, no row padding; an odd final unused high nibble must be0. Decoder accepts signed[-8,7]; exporter uses symmetric[-7,7]. `lowbit.encode(values:[]const i8,out:[]u8) !void` requires exact ceil(N/2) length and range[-8,7]. See source for helper signatures. Activations/workspace remain int8; packed weights decode on demand, trading Flash for CPU work. No real MCU speed comparison has been measured.
+
+## Inference-only package entry point
+
+`@import("zinn_infer")` exposes the same Dense, Sequential, Conv2D,
+AveragePool2D, Tensor, Shape, quant, lowbit and argmax implementations. It also
+exposes the legacy generic Workspace(width); prefer Model.Workspace because it
+uses the graph-specific memory plan. No Trainer/data/export/host/Service is
+exported. Existing full @import("zinn") remains supported.
+
+For generated models use addModel.createModule or createModuleWithCore, described
+in [Build API](build.md) and [integration](../integration.md). These distinguish
+host source generation from consumer-target compilation. Share a single core
+Module instance when importing the core and generated models into one executable;
+Zig disallows overlapping source ownership by independent modules.

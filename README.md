@@ -85,6 +85,22 @@ The common train/evaluate/e2e/deploy/flash workflow consistently selects
 reference; its PASS is not classification accuracy. See the [CLI reference and
 legacy migration](docs/cli.md) for cached summaries and checkpoint reuse.
 
+## Add a model to an existing application
+
+Use `addModel()` to train/evaluate/export without creating firmware. Add its
+consumer-target module with ordinary `root_module.addImport()`; keep your own
+main loop, HAL and input/output. `addInferenceModule()` supplies only integer
+inference. `addMemoryCheck()` checks the caller's final ELF. The existing
+`addProject()` remains the complete UART/deployment workflow.
+
+```sh
+zig build --build-file examples/integration/host-app/build.zig sensor-generate sensor-e2e run
+zig build --build-file examples/integration/ch32-existing-app/build.zig
+zig build --build-file examples/integration/multi-model/build.zig run
+```
+
+No hardware or flash operation is required. See [integration and Build examples](docs/integration.md).
+
 ## Examples
 
 | Example | Purpose |
