@@ -130,8 +130,8 @@ pub const App = struct {
         ui.textWith(6, "PREDICTION", .{ .offset = .{ .x = 252, .y = 44 } });
         ui.textWith(7, "INT8 LOGITS", .{ .offset = .{ .x = 348, .y = 44 } });
         ui.textWith(8, if (self.prediction == null) "WRITE A DIGIT TO BEGIN" else if (self.sample_mode) "MNIST VALIDATION SAMPLE" else "LIVE / UPDATES AS YOU DRAW", .{ .offset = .{ .x = 24, .y = 190 } });
-        ui.buttonWith(10, "CLEAR", .{ .offset = .{ .x = 24, .y = 214 }, .size = .{ .w = 64, .h = 20 } });
-        ui.buttonWith(11, "SAMPLE", .{ .offset = .{ .x = 100, .y = 214 }, .size = .{ .w = 64, .h = 20 } });
+        ui.buttonWith(10, "CLEAR", .{ .offset = .{ .x = 24, .y = 214 }, .size = .{ .w = 64, .h = 20 }, .text_alignment = .center, .text_vertical_alignment = .center });
+        ui.buttonWith(11, "SAMPLE", .{ .offset = .{ .x = 100, .y = 214 }, .size = .{ .w = 64, .h = 20 }, .text_alignment = .center, .text_vertical_alignment = .center });
         ui.textWith(12, "DRAG TO DRAW / ESC TO CLEAR", .{ .offset = .{ .x = 24, .y = 250 } });
         ui.textWith(13, self.text("MLP32 INT8 / ID {x}", .{generated.model_id}), .{ .offset = .{ .x = 276, .y = 250 } });
         root.end();

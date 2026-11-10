@@ -1,7 +1,7 @@
 # MNIST desktop integration verification
 
 The [independent example](../examples/mnist-desktop/README.md) uses the public
-mimoc-ui package, pinned to aa61a53e63595f764b96a9dfd09b870d7a2f95d5. The local
+mimoc-ui package, pinned to 5486c9cc4d7a67eeb3c385dee836a2081d112322. The local
 mimoc-ui checkout had unrelated changes and was left untouched. No upstream patch
 was necessary: the existing Mono1 renderer, Ui buttons, pointer events and macOS
 bridge were sufficient. UI/AppKit dependencies exist only in this example.
@@ -115,3 +115,18 @@ changed. Physical trackpad gestures and manual resize were not separately
 retested in this small display change; their existing event/resize code is
 untouched. Linux native execution remains a CI check rather than a local macOS
 claim. No new accuracy or performance measurement is claimed.
+
+## mimoc-ui main update: centered button labels
+
+The UI dependency is pinned to main commit 5486c9cc4d7a67eeb3c385dee836a2081d112322
+with the corresponding Zig package hash. CLEAR and SAMPLE explicitly use
+text_alignment=.center and text_vertical_alignment=.center. Button rectangles,
+hit areas and the rest of the 480x272 layout are unchanged. No Zinn-local copy of
+the upstream implementation is introduced.
+
+Both Debug/ReleaseSafe suites pass 13/13 tests. A fresh sample snapshot differs
+from the preceding screenshot in 314 pixels, all within the two button rectangles;
+every other pixel is identical. The current screenshot includes this centering
+(the earlier 380-pixel bar comparison above describes the preceding logit phase).
+The macOS window was rebuilt/reopened and the centered labels and SAMPLE action
+were checked interactively. Model source/checkpoint and inference are unchanged.

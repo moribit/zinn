@@ -17,7 +17,7 @@
   [CVDF mirror](https://github.com/cvdfoundation/mnist), originally the MNIST
   handwritten digit database by Yann LeCun, Corinna Cortes and Christopher Burges.
 - Native UI dependency: [moribit/mimoc-ui](https://github.com/moribit/mimoc-ui)
-  at aa61a53e63595f764b96a9dfd09b870d7a2f95d5; no upstream changes required.
+  at 5486c9cc4d7a67eeb3c385dee836a2081d112322; no upstream changes required.
 
 Reproduce with the `refresh-bundle` command in the [example guide](../README.md),
 using this checkpoint, the four official gzip files and Zig 0.17.0. Assets are

@@ -6,8 +6,8 @@
     .dependencies = .{
         .zinn = .{ .path = "../.." },
         .mimoc_ui = .{
-            .url = "git+https://github.com/moribit/mimoc-ui.git#aa61a53e63595f764b96a9dfd09b870d7a2f95d5",
-            .hash = "mimoc_ui-0.1.0-9nb8bjpNDgBkOV7rt12IYN5IVRwRJuVEHaDeW_4Hru6c",
+            .url = "git+https://github.com/moribit/mimoc-ui.git#5486c9cc4d7a67eeb3c385dee836a2081d112322",
+            .hash = "mimoc_ui-0.1.0-9nb8bnJyFgA4WIjp3rA0lYjzMDsYTxl5AK_Ft07u17bf",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "main.zig", "app.zig", "canvas.zig", "logits.zig", "model.zig", "assets", "README.md", "Info.plist" },

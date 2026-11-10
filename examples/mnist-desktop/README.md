@@ -22,7 +22,8 @@ are unchanged. No local sibling checkout of mimoc-ui is required.
 
 - Drag inside the 112x112 canvas with a mouse or trackpad. The prediction and
   16x16 model input update on changed strokes, including while the pen is down.
-- CLEAR or Escape/Backspace/Delete removes the drawing and prediction.
+- CLEAR or Escape/Backspace/Delete removes the drawing and prediction. CLEAR
+  and SAMPLE labels are centered horizontally and vertically using mimoc-ui.
 - SAMPLE cycles through 16 bundled quantized validation inputs. Starting a stroke
   after a sample clears it. Samples check model integration; they are not a
   substitute for handwritten-input evaluation.
