@@ -53,3 +53,48 @@ test "training chunks and checkpoint reload do not change numerical results" {
     const input = try one.world.state.normalized();
     try std.testing.expectEqualSlices(f32, &one.agent.online.predict(&input), &loaded.predict(&input));
 }
+
+test "export transforms, clipping and calibration remain deterministic" {
+    const p = @import("policy_export.zig");
+    var model = a.T.init(42);
+    const input = [_]f32{ 0.1, -0.2, 0.3, -0.4 };
+    const raw = model.predict(&input);
+    const d = p.difference(&model);
+    try std.testing.expectApproxEqAbs(raw[1] - raw[0], d.predict(&input)[0], 0.00001);
+    const samples = [_]a.T.Sample{ .{ .input = input, .target = .{ 0, 0 } }, .{ .input = .{ 1, 0, 0, 0 }, .target = .{ 0, 0 } } };
+    const balanced = p.equalize(&model, &samples);
+    const b = balanced.predict(&input);
+    try std.testing.expectApproxEqAbs(raw[1] - raw[0], b[1] - b[0], 0.00001);
+    const allocator = std.testing.allocator;
+    const first = try p.samples(allocator, .rollout, &model, &samples);
+    defer allocator.free(first);
+    const second = try p.samples(allocator, .rollout, &model, &samples);
+    defer allocator.free(second);
+    try std.testing.expect(std.meta.eql(first[0], second[0]));
+    for (first, second) |left, right| try std.testing.expect(std.meta.eql(left, right));
+    const q1 = try p.quantize(p.Difference, &d, &samples, 0.125);
+    const q2 = try p.quantize(p.Difference, &d, &samples, 0.125);
+    try std.testing.expectEqual(q1.modelId(), q2.modelId());
+    try std.testing.expectEqualSlices(i8, &q1.infer(&.{ 1, 2, 3, 4 }), &q2.infer(&.{ 1, 2, 3, 4 }));
+    try std.testing.expectError(error.InvalidOutputFactor, p.quantize(p.Difference, &d, &samples, std.math.nan(f32)));
+    try std.testing.expectError(error.InvalidOutputFactor, p.quantize(p.Difference, &d, &samples, 0));
+    try std.testing.expectEqual(@as(usize, 0), p.action([_]i8{0}));
+    try std.testing.expectEqual(@as(usize, 0), p.action([_]i8{ 127, 127 }));
+    try std.testing.expectEqual(@as(i8, -2), z.quant.requantize(-3, .{ .shift = 1 }));
+    try std.testing.expectEqual(@as(i8, 127), z.quant.requantize(2147483647, .{}));
+    model.parameters[0] = std.math.inf(f32);
+    try std.testing.expectError(error.NonFiniteParameters, p.quantize(a.S, &model, &samples, 1));
+}
+
+test "baseline export is the shared exporter and statistics include dispersion" {
+    const p = @import("policy_export.zig");
+    const model = a.T.init(42);
+    const samples = [_]a.T.Sample{.{ .input = .{ 0.1, 0.2, -0.1, 0.3 }, .target = .{ 0, 0 } }};
+    const shared = try z.export_model.Quantized(a.S).calibrate(&model, &samples);
+    const baseline = try p.quantize(a.S, &model, &samples, 1);
+    try std.testing.expectEqual(shared.modelId(), baseline.modelId());
+    const stats = @import("study.zig").Stats.from(@splat(500));
+    try std.testing.expectEqual(@as(f64, 500), stats.median);
+    try std.testing.expectEqual(@as(f64, 0), stats.standard_deviation);
+    try std.testing.expectEqual(@as(usize, 50), stats.successes);
+}

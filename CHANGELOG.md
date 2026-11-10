@@ -4,6 +4,9 @@ This project has no published release history asserted here. Package version0.1.
 
 ## Unreleased
 
+- Opt-in CartPole int8 policy export with rollout calibration, hidden range equalization, bias correction and a smaller difference head; fixed-learner and final-seed comparisons.
+- Saved float/int8/paired CartPole desktop comparison and eight mirrored beginner diagrams across seven English/Japanese tutorial pairs.
+
 - Host-only DQN with deterministic replay, target networks and existing Trainer/checkpoint reuse.
 - CartPole headless learning/evaluation, mimoc-ui macOS visualization, centered int8 policy export and CH32V003 final-ELF budget checks.
 - Optional caller-owned model producer in `addModel`, preserving existing supervised workflows.

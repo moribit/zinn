@@ -59,3 +59,16 @@ test "documented static Dense, Conv, Pool, packed and transport APIs" {
     for (frame, 0..) |byte, i| event = receiver.feed(byte, @intCast(i));
     try std.testing.expect(event == .request);
 }
+
+test {
+    _ = @import("learning.zig");
+}
+
+test "tutorial MNIST and CartPole definitions compile with the public Trainer" {
+    const Mnist = @import("mnist_documented_definition").Structure;
+    const CartPole = @import("cartpole_documented_definition").Structure;
+    const mnist = z.Trainer(Mnist).init(42);
+    const cartpole = z.Trainer(CartPole).init(42);
+    try std.testing.expectEqual(@as(usize, 10), mnist.predict(&@as([256]f32, @splat(0))).len);
+    try std.testing.expectEqual(@as(usize, 2), cartpole.predict(&@as([4]f32, @splat(0))).len);
+}

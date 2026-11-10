@@ -74,6 +74,22 @@ const Checker = struct {
             }
         }
     }
+    fn codeFences(self: *@This(), bytes: []const u8) ![]const u8 {
+        var output: std.ArrayList(u8) = .empty;
+        var lines = std.mem.splitScalar(u8, bytes, '\n');
+        var inside = false;
+        while (lines.next()) |line| {
+            if (std.mem.startsWith(u8, line, "```")) {
+                inside = !inside;
+                try output.appendSlice(self.a, line);
+                try output.append(self.a, '\n');
+            } else if (inside) {
+                try output.appendSlice(self.a, line);
+                try output.append(self.a, '\n');
+            }
+        }
+        return output.toOwnedSlice(self.a);
+    }
     fn mirror(self: *@This(), path: []const u8, marker: []const u8, source: []const u8) !void {
         const bytes = try self.read(path);
         const start = std.mem.indexOf(u8, bytes, marker) orelse return self.fail(path, marker);
@@ -98,6 +114,17 @@ pub fn main(init: std.process.Init) !void {
     try c.mirror("README.md", "<!-- zinn-api-sample -->", "examples/docs/model.zig");
     try c.mirror("README_ja.md", "<!-- zinn-api-sample -->", "examples/docs/model.zig");
     try c.mirror("docs/api/models.md", "<!-- zinn-image-sample -->", "examples/docs/image.zig");
-    std.debug.print("documentation: {d} files, {d} local links, {d} failures; 3 mirrored fences\n", .{ c.files, c.links, c.failures });
+    for ([_][]const u8{ "00-machine-learning-basics", "01-neural-networks", "02-mnist-training", "03-mnist-inference", "04-reinforcement-learning", "05-cartpole-dqn", "06-quantization-and-mcu" }) |chapter| {
+        const en = try std.fmt.allocPrint(c.a, "docs/tutorials/en/{s}.md", .{chapter});
+        const ja = try std.fmt.allocPrint(c.a, "docs/tutorials/ja/{s}.md", .{chapter});
+        if (!std.mem.eql(u8, try c.codeFences(try c.read(en)), try c.codeFences(try c.read(ja)))) c.fail(en, ja);
+    }
+    try c.mirror("docs/tutorials/en/01-neural-networks.md", "<!-- zinn-learning-sample -->", "examples/docs/learning.zig");
+    try c.mirror("docs/tutorials/ja/01-neural-networks.md", "<!-- zinn-learning-sample -->", "examples/docs/learning.zig");
+    try c.mirror("docs/tutorials/en/02-mnist-training.md", "<!-- zinn-mnist-definition -->", "examples/mnist-desktop/model.zig");
+    try c.mirror("docs/tutorials/en/05-cartpole-dqn.md", "<!-- zinn-cartpole-definition -->", "examples/rl-cartpole/model.zig");
+    try c.mirror("docs/tutorials/ja/02-mnist-training.md", "<!-- zinn-mnist-definition -->", "examples/mnist-desktop/model.zig");
+    try c.mirror("docs/tutorials/ja/05-cartpole-dqn.md", "<!-- zinn-cartpole-definition -->", "examples/rl-cartpole/model.zig");
+    std.debug.print("documentation: {d} files, {d} local links, {d} failures; 9 mirrored fences; 7 bilingual code/diagram pairs\n", .{ c.files, c.links, c.failures });
     if (c.failures != 0) return error.BrokenDocumentation;
 }

@@ -114,3 +114,7 @@ The Build script uses root_module.addImport with a target-specific inference
 Module and the generated LazyPath; no MCU support or mimoc-ui fork is required.
 See the [integration guide](../../docs/integration.md) and
 [desktop verification record](../../docs/mnist-desktop.md).
+
+## Learn how it works
+
+Follow the beginner tutorials: [English MNIST inference](../../docs/tutorials/en/03-mnist-inference.md) / [日本語・MNISTの推論](../../docs/tutorials/ja/03-mnist-inference.md). They explain pixels, logits, relative bars and integer inference without assuming ML knowledge.

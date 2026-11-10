@@ -2,7 +2,7 @@
 
 **小さなニューラルネットワークをPure Zigで。ホスト学習からマイコン向けファームウェア生成まで。**
 
-[English](README.md) · [Getting Started](docs/getting-started.md) · [文書一覧](docs/README.md)
+[English](README.md) · [Getting Started](docs/getting-started.md) · [文書一覧](docs/README.md) · [機械学習入門](docs/tutorials/ja/00-machine-learning-basics.md)
 
 Zinnは極小マイコン向けの機械学習推論フレームワークです。Zig **0.17.0**でモデルを定義・学習・評価し、整数推論用ZigコードとCH32V003向けファームウェアを生成します。
 
@@ -125,3 +125,7 @@ Zinn本体は[MIT](LICENSE)。同梱ch32fun_zigにも[独立したMIT表記](ven
 ## 強化学習
 
 [CartPole RL Lab](examples/rl-cartpole/README.md)は、ホスト専用DQN学習、mimoc-uiによるmacOS可視化、Checkpoint再利用、int8ポリシー生成、CH32V003クロスビルドに対応します。[評価レポート](docs/rl-cartpole-report.md)ではfloatのReward、整数モデルとの行動一致率、実機未測定の項目を区別しています。
+
+## Zinnで学ぶ機械学習
+
+ML未経験の方は、[日本語の第0章](docs/tutorials/ja/00-machine-learning-basics.md)または[English introduction](docs/tutorials/en/00-machine-learning-basics.md)から始められます。全7章でニューラルネットワーク、MNIST、CartPole DQN、量子化、MCU配備を検証済みコードと結び付けます。[CartPole改善レポート](docs/rl-cartpole-quality.md)では制御性能と数値的一致を区別しています。

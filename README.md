@@ -6,7 +6,7 @@
 [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Zig 0.17.0](https://img.shields.io/badge/Zig-0.17.0-orange)
 
-[日本語](README_ja.md) · [Getting Started](docs/getting-started.md) · [Documentation](docs/README.md)
+[日本語](README_ja.md) · [Getting Started](docs/getting-started.md) · [Documentation](docs/README.md) · [ML introduction](docs/tutorials/en/00-machine-learning-basics.md)
 
 Zinn is a small neural network inference framework for resource-constrained microcontrollers. Define a model once, train and evaluate it on your computer, then generate integer inference code and CH32V003 firmware using Zig **0.17.0**.
 
@@ -142,3 +142,7 @@ The [CartPole RL Lab](examples/rl-cartpole/README.md) adds host-only DQN learnin
 a mimoc-ui desktop visualizer (macOS), checkpoint reuse, int8 policy export and
 CH32V003 cross-builds. [Measured results](docs/rl-cartpole-report.md) distinguish
 float reward, integer action agreement and hardware measurements.
+
+## Learning Machine Learning with Zinn
+
+New to ML? Start with the [English introduction](docs/tutorials/en/00-machine-learning-basics.md) or [日本語入門](docs/tutorials/ja/00-machine-learning-basics.md). Seven chapters connect neural networks, MNIST, CartPole DQN, quantization and MCU deployment to tested Zinn code. [CartPole quality results](docs/rl-cartpole-quality.md) distinguish improved control from numerical identity.

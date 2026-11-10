@@ -31,3 +31,7 @@ These are dated records, largely in Japanese. Current commands are specified by 
 - [Stored curves and manifests](experiments/README.md)
 
 [Deployment](deployment.md) is a compatibility entry point to the tutorials/reference.
+
+## Learning machine learning
+
+Seven paired chapters for newcomers: [English](tutorials/en/00-machine-learning-basics.md) / [日本語](tutorials/ja/00-machine-learning-basics.md). Each chapter links concepts to code, executable commands and the next chapter. [CartPole export quality](rl-cartpole-quality.md) records the new controlled study separately from the original baseline.

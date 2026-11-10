@@ -55,6 +55,11 @@ pub fn build(b: *std.Build) void {
     doc_run.has_side_effects = true;
     docs_check.dependOn(&doc_run.step);
     const doc_api = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("examples/docs/api.zig"), .target = b.graph.host, .optimize = .safe, .imports = &.{.{ .name = "zinn", .module = host_core }} }) });
+    inline for (.{ .{ "mnist_documented_definition", "examples/mnist-desktop/model.zig" }, .{ "cartpole_documented_definition", "examples/rl-cartpole/model.zig" } }) |spec| {
+        const definition = b.createModule(.{ .root_source_file = b.path(spec[1]), .target = b.graph.host, .optimize = .safe });
+        definition.addImport("zinn", host_core);
+        doc_api.root_module.addImport(spec[0], definition);
+    }
     docs_check.dependOn(&b.addRunArtifact(doc_api).step);
     const test_step = b.step("test", "Run unit/golden and compile-fail tests");
     const tests = b.addTest(.{ .root_module = host_core });

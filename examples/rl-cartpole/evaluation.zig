@@ -28,7 +28,7 @@ pub fn evaluateSeeds(model: *const T, random: bool, base_seed: u32) !Evaluation 
     return result;
 }
 
-pub fn evaluateInteger(model: *const Q, base_seed: u32) !Evaluation {
+pub fn evaluateInteger(model: anytype, base_seed: u32) !Evaluation {
     var result: Evaluation = .{};
     for (&result.rewards, 0..) |*reward, i| {
         var world: env.Environment = .{};
@@ -38,7 +38,7 @@ pub fn evaluateInteger(model: *const Q, base_seed: u32) !Evaluation {
             var input: [4]i8 = undefined;
             for (&input, state) |*v, f| v.* = try z.export_model.quantizeInput(f, model.scales[0]);
             const output = model.infer(&input);
-            const step = try world.step(if (output[1] > output[0]) .right else .left);
+            const step = try world.step(if (@import("policy_export.zig").action(output) == 1) .right else .left);
             if (step.truncated and !step.terminated) result.successes += 1;
         }
         reward.* = world.steps;
@@ -48,7 +48,7 @@ pub fn evaluateInteger(model: *const Q, base_seed: u32) !Evaluation {
     return result;
 }
 pub const Agreement = struct { matched: usize = 0, mismatched: usize = 0, rate: f32 = 0 };
-pub fn agreement(model: *const T, quantized: *const Q) !Agreement {
+pub fn agreement(model: *const T, quantized: anytype) !Agreement {
     var result: Agreement = .{};
     for (0..50) |i| {
         var world: env.Environment = .{};
@@ -60,7 +60,7 @@ pub fn agreement(model: *const T, quantized: *const Q) !Agreement {
             var input: [4]i8 = undefined;
             for (&input, state) |*v, f| v.* = try z.export_model.quantizeInput(f, quantized.scales[0]);
             const output = quantized.infer(&input);
-            const integer: @TypeOf(action) = if (output[1] > output[0]) 1 else 0;
+            const integer: @TypeOf(action) = @import("policy_export.zig").action(output);
             if (action == integer) result.matched += 1 else result.mismatched += 1;
             _ = try world.step(if (action == 0) .left else .right);
         }

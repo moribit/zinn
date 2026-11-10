@@ -66,14 +66,15 @@ pub fn main(init: std.process.Init) !void {
     const uncentered_agreement = try @import("evaluation.zig").agreement(&session.best, &raw_quantized);
     const centered = z.rl.centeredActionHead(a.S, &session.best);
     const centered_float = try a.evaluate(&centered, false);
-    const quantized = try @import("evaluation.zig").Q.calibrate(&centered, calibration);
+    const improved = if (config.improved) try @import("policy_export.zig").selected(init.arena.allocator(), &session.best, calibration) else {};
+    const quantized = if (config.improved) improved.quantized else try @import("evaluation.zig").Q.calibrate(&centered, calibration);
     const integer = try @import("evaluation.zig").evaluateInteger(&quantized, 0xc0000000);
     const agreement = try @import("evaluation.zig").agreement(&session.best, &quantized);
     var source: std.Io.Writer.Allocating = .init(init.arena.allocator());
     try quantized.writeSource(&source.writer);
-    try quantized.writeVerification(&source.writer, calibration[0..@min(128, calibration.len)]);
+    if (config.improved) try @import("policy_export.zig").writeVerification(&improved, &source.writer) else try quantized.writeVerification(&source.writer, calibration[0..@min(128, calibration.len)]);
     try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[4], .data = source.written() });
-    const metadata = try std.json.Stringify.valueAlloc(init.arena.allocator(), .{ .schema_version = @as(u32, 1), .task = "cartpole_dqn", .model_id = quantized.modelId(), .input_scale = quantized.scales[0], .output_scale = quantized.scales[a.S.layer_count], .state_divisors = [_]f32{ 2.4, 3, a.env.angle_limit, 3.5 }, .normalization = "divide then clamp [-1,1]", .reward_scale = session.agent.options.reward_scale, .q_centered = true, .output_representation = "centered action scores; not absolute return Q", .calibration_count = calibration.len, .parameter_bytes = 352 + 34 * 4, .workspace_bytes = 32, .hardware_measured = false }, .{});
+    const metadata = try std.json.Stringify.valueAlloc(init.arena.allocator(), .{ .schema_version = @as(u32, 1), .task = "cartpole_dqn", .model_id = quantized.modelId(), .input_scale = quantized.scales[0], .output_scale = quantized.scales[3], .state_divisors = [_]f32{ 2.4, 3, a.env.angle_limit, 3.5 }, .normalization = "divide then clamp [-1,1]", .reward_scale = session.agent.options.reward_scale, .q_centered = true, .export_profile = if (config.improved) "improved" else "baseline", .calibration_source = if (config.improved) "greedy rollout seeds 0xa0000000+[0,49]" else "replay or supplied calibration", .hidden_equalized = config.improved, .bias_corrected = config.improved, .output_scale_factor = if (config.improved) @as(f32, 0.125) else 1, .output_len = if (config.improved) @as(usize, 1) else 2, .output_representation = if (config.improved) "right-minus-left centered action margin; not absolute Q" else "centered action scores; not absolute return Q", .calibration_count = calibration.len, .parameter_bytes = if (config.improved) @as(usize, 468) else 488, .workspace_bytes = 32, .hardware_measured = false }, .{});
     try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[5], .data = metadata });
     var csv: std.Io.Writer.Allocating = .init(init.arena.allocator());
     for (calibration) |sample| {

@@ -3,7 +3,7 @@ const generated = @import("policy");
 pub fn main() !void {
     const M = generated.Model;
     var workspace: M.Workspace = .{};
-    var output: [2]i8 = undefined;
+    var output: [M.output_len]i8 = undefined;
     for (generated.inputs, generated.expected) |input, expected| {
         M.infer(&input, &output, &workspace);
         if (!std.mem.eql(i8, &output, &expected)) return error.IntegerReferenceMismatch;

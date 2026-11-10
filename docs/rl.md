@@ -140,3 +140,7 @@ Action agreement compares float and int8 on the same states along float rollouts
 Reward evaluation instead lets each policy follow its own trajectory from the same
 initial seeds. Exact integer kernel/reference equality does not imply float action
 agreement or equal reward. See [measured losses and limitations](rl-cartpole-report.md).
+
+## Control-quality follow-up and beginner tutorials
+
+The [new quality study](rl-cartpole-quality.md) adds an opt-in CartPole-only export path, preserving the original learner and checkpoint. Positive hidden-unit equalization, calibration mean-bias correction and a one-output difference head improve measured int8 control. The shared classification exporter/kernels are unchanged. Begin with [English RL basics](tutorials/en/04-reinforcement-learning.md) or [日本語・強化学習の基本](tutorials/ja/04-reinforcement-learning.md).

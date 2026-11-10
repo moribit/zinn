@@ -1,0 +1,1 @@
+{"seed":42,"decay":false,"metrics":{"successes":0,"failures":1000,"episodes":1000,"reward":18,"mean100":92.69999694824219,"maximum":458,"evaluation":18.959997177124023,"best_evaluation":230.1600341796875,"best_episode":750},"updates":75775}

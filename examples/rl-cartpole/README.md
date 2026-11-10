@@ -30,7 +30,7 @@ Artifacts under `examples/rl-cartpole/zig-out/`:
 | `training/cartpole.zinn` | Best original float Q network; checkpoint v1 |
 | `reports/curve.csv` | Exploration rewards, mean100, development scores, loss, counts |
 | `reports/report.json` | All 50 held-out rewards per policy and agreement counts |
-| `reports/calibration.csv` | Label-first CSV of normalized calibration states |
+| `reports/calibration.csv` | Label-first baseline calibration; improved profile regenerates greedy rollouts |
 | `models/policy.zig` | Generated int8 centered action-score model and reference vectors |
 | `reports/policy.json` | Input/output scales, normalization and model identity |
 | `reports/cartpole-policy-memory.json` | Final ELF budget report |
@@ -84,8 +84,8 @@ zig build --build-file examples/rl-cartpole/build.zig test-gui -Doptimize=safe
 
 The first build produces a saved policy through the headless pipeline. The desktop
 then starts a fresh automatic training session; no human action selection is needed.
-The 640×360 monochrome logical surface uses mimoc-ui's existing centered buttons
-and pixel font. The AppKit window has a 1280×720-point minimum content size and
+The 640×400 monochrome logical surface uses mimoc-ui's existing centered buttons
+and pixel font. The AppKit window has a 960×600-point minimum content size and
 scales/letterboxes when enlarged. Native GUI support is currently macOS only.
 
 - **TRAIN:** return to the preserved training session; restart if already completed.
@@ -108,6 +108,7 @@ Render a deterministic saved-policy snapshot without opening a window:
 ```sh
 zig build --build-file examples/rl-cartpole/build.zig
 ./examples/rl-cartpole/zig-out/bin/zinn-rl-lab --snapshot cartpole.pbm
+./examples/rl-cartpole/zig-out/bin/zinn-rl-lab --snapshot-compare cartpole-compare.pbm
 ```
 
 ## Environment and deployment
@@ -128,3 +129,40 @@ Do not feed raw physical values to the integer input. Left wins tied scores.
 
 Flash/RAM reports are cross-build results; cycles, latency, stack high-water and
 physical control are **not measured**. This simulator is not a real actuator controller.
+
+## Improved export and policy comparison
+
+Default `-Dpolicy-export=baseline` retains the two-score interface. Select
+`-Dpolicy-export=improved` for rollout calibration, positive ReLU equalization,
+calibration bias correction and a one-score RIGHT−LEFT output. The saved original
+Q checkpoint, training defaults and input normalization stay unchanged. Use
+`Model.output_len` when allocating output: improved output length is one. Its
+positive score means RIGHT; zero/negative means LEFT. See the [controlled quality
+report](../../docs/rl-cartpole-quality.md) for measured improvements and unmet goals.
+
+```sh
+zig build --build-file examples/rl-cartpole/build.zig train evaluate e2e firmware -Dpolicy-export=improved
+zig build --build-file examples/rl-cartpole/build.zig run -Dpolicy-export=improved
+zig build --build-file examples/rl-cartpole/build.zig study
+zig build --build-file examples/rl-cartpole/build.zig study -Dfinal-test=true
+zig build --build-file examples/rl-cartpole/build.zig stability -Dseed=44
+```
+
+`study` compares only development candidates by default. `-Dfinal-test=true`
+evaluates the frozen baseline/improved pair on the new held-out seed partition;
+it does not select another candidate. Detailed diagnostics and compact JSON are
+installed in `reports/study/`. `stability` is an isolated fixed/step-decay experiment;
+it never changes normal training settings. Real-arithmetic transform equivalence
+does not guarantee identical float32 decisions at exact/near ties.
+
+New **FLOAT**, **INT8**, **COMPARE** buttons use the saved checkpoint and its integer
+export. COMPARE starts both worlds from the same state and advances independent
+trajectories, freezing an ended world until the pair ends. Its same-state match
+label probes int8 on the float state; it does not equate two diverged states.
+Legacy WATCH still uses the current training best. Training is paused during all
+watch modes. Integer scores are margins/scores, not absolute return Q values.
+The logical screen is now 640×400; snapshots follow that size. Buttons remain
+standard mimoc-ui widgets. The native initial/minimum content size is 960×600 points.
+
+Beginner explanations: [English DQN](../../docs/tutorials/en/05-cartpole-dqn.md) /
+[日本語・CartPole DQN](../../docs/tutorials/ja/05-cartpole-dqn.md).

@@ -8,7 +8,10 @@ pub fn build(b: *std.Build) void {
     tests.root_module.addImport("zinn", core);
     b.step("test", "Environment and training integration tests").dependOn(&b.addRunArtifact(tests).step);
     const opts = b.addOptions();
-    opts.addOption(u32, "seed", b.option(u32, "seed", "Reproducible seed") orelse 42);
+    const export_profile = b.option(enum { baseline, improved }, "policy-export", "CartPole export profile (baseline remains compatible)") orelse .baseline;
+    opts.addOption(bool, "improved", export_profile == .improved);
+    const seed = b.option(u32, "seed", "Reproducible seed") orelse 42;
+    opts.addOption(u32, "seed", seed);
     opts.addOption(usize, "episodes", b.option(usize, "episodes", "Training episodes") orelse 1000);
     opts.addOption(usize, "replay_capacity", b.option(usize, "replay-capacity", "Replay transitions") orelse 10000);
     opts.addOption(f32, "rate", b.option(f32, "rate", "SGD learning rate") orelse 0.005);
@@ -44,6 +47,27 @@ pub fn build(b: *std.Build) void {
     train.dependOn(&b.addInstallFile(curve, "reports/curve.csv").step);
     train.dependOn(&b.addInstallFile(report, "reports/report.json").step);
 
+    const stability_exe = b.addExecutable(.{ .name = "cartpole-stability", .root_module = b.createModule(.{ .root_source_file = b.path("stability.zig"), .target = b.graph.host, .optimize = .fast }) });
+    stability_exe.root_module.addImport("zinn", core);
+    const stability = b.addRunArtifact(stability_exe);
+    stability.addArg(b.fmt("{d}", .{seed}));
+    const stability_dir = stability.addOutputDirectoryArg("stability");
+    b.step("stability", "Isolated fixed-rate versus step-decay learning experiment").dependOn(&b.addInstallDirectory(.{ .source_dir = stability_dir, .install_dir = .prefix, .install_subdir = "reports/stability" }).step);
+    const study_exe = b.addExecutable(.{ .name = "cartpole-study", .root_module = b.createModule(.{ .root_source_file = b.path("study.zig"), .target = b.graph.host, .optimize = .fast }) });
+    study_exe.root_module.addImport("zinn", core);
+    const study = b.addRunArtifact(study_exe);
+    // Supplying checkpoint/calibration to train also supplies its unchanged outputs here.
+    study.addFileArg(checkpoint);
+    study.addFileArg(calibration);
+    const study_dir = study.addOutputDirectoryArg("study");
+    study.addArg(if (b.option(bool, "final-test", "Run frozen strategy on untouched final seeds") orelse false) "final" else "development");
+    const quality_exe = b.addExecutable(.{ .name = "cartpole-quality-check", .root_module = b.createModule(.{ .root_source_file = b.path("check_quality.zig"), .target = b.graph.host, .optimize = .safe }) });
+    const quality_check = b.addRunArtifact(quality_exe);
+    quality_check.addFileArg(study_dir.path(b, "final.json"));
+    b.step("quality-check", "Validate frozen final comparison (use -Dfinal-test=true)").dependOn(&quality_check.step);
+    const study_step = b.step("study", "Quantization diagnostics and controlled policy comparisons");
+    study_step.dependOn(&b.addInstallDirectory(.{ .source_dir = study_dir, .install_dir = .prefix, .install_subdir = "reports/study" }).step);
+
     const verifier = b.step("_policy-verify", "Independent generated integer verification");
     const policy = zinn.addModel(b, dep, .{ .name = "cartpole-policy", .model = b.path("model.zig"), .dataset = .{ .csv = .{ .training = calibration, .evaluation = calibration } }, .generated = .{ .source = source, .checkpoint = checkpoint, .metadata = metadata, .generate = train, .verify = verifier } });
     const verification = b.addExecutable(.{ .name = "policy-verify", .root_module = b.createModule(.{ .root_source_file = b.path("verify.zig"), .target = b.graph.host, .optimize = .safe }) });
@@ -75,11 +99,14 @@ pub fn build(b: *std.Build) void {
         const checkpoint_files = b.addWriteFiles();
         _ = checkpoint_files.addCopyFile(checkpoint, "policy.zinn");
         const checkpoint_module = b.createModule(.{ .root_source_file = checkpoint_files.add("checkpoint.zig", "pub const bytes=@embedFile(\"policy.zinn\");\n"), .target = b.graph.host, .optimize = .fast });
+        const gui_integer = b.createModule(.{ .root_source_file = source, .target = b.graph.host, .optimize = .fast });
+        gui_integer.addImport("zinn", core);
         const controller = b.createModule(.{ .root_source_file = b.path("app.zig"), .target = b.graph.host, .optimize = .fast });
         controller.addImport("zinn", core);
         controller.addImport("mimoc_ui", ui);
         controller.addImport("options", module.import_table.get("options").?);
         controller.addImport("initial_policy", checkpoint_module);
+        controller.addImport("integer_policy", gui_integer);
         const desktop = b.addExecutable(.{ .name = "zinn-rl-lab", .root_module = b.createModule(.{ .root_source_file = b.path("main.zig"), .target = b.graph.host, .optimize = .safe }) });
         desktop.root_module.addImport("app", controller);
         desktop.root_module.addImport("mimoc_ui", ui);
@@ -102,6 +129,7 @@ pub fn build(b: *std.Build) void {
         test_controller.addImport("mimoc_ui", ui);
         test_controller.addImport("options", module.import_table.get("options").?);
         test_controller.addImport("initial_policy", checkpoint_module);
+        test_controller.addImport("integer_policy", gui_integer);
         const gui_tests = b.addTest(.{ .root_module = test_controller });
         b.step("test-gui", "Headless GUI controls and scheduling tests").dependOn(&b.addRunArtifact(gui_tests).step);
     }

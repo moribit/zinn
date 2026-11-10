@@ -117,3 +117,7 @@ Extending that setup to 2,000 episodes remained near random or worse. Gamma 0.99
 with reward scale 1 and learning rate 0.001 tripped the Q divergence guard. These
 experiments motivated the current gamma, update cadence and residual clip; they
 are not additional successes and were not tuned against final evaluation seeds.
+
+## Follow-up
+
+The results above remain the original d82c434 baseline. [Control-quality improvements](rl-cartpole-quality.md) use a separately frozen final seed partition and retain all original records. Beginner explanations are available in [English](tutorials/en/05-cartpole-dqn.md) and [日本語](tutorials/ja/05-cartpole-dqn.md).

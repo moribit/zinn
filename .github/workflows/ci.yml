@@ -73,13 +73,17 @@ jobs:
         run: |
           zig build --build-file examples/rl-cartpole/build.zig test -Doptimize=safe
           bash tests/rl_cartpole.sh zig rl-cartpole-results
+          bash tests/cartpole_quality.sh zig cartpole-quality-results
       - name: CartPole native controller and snapshot
         if: runner.os == 'macOS'
         run: |
           zig build --build-file examples/rl-cartpole/build.zig test-gui
+          zig build --build-file examples/rl-cartpole/build.zig test-gui -Dpolicy-export=improved
           zig build --build-file examples/rl-cartpole/build.zig test-gui -Doptimize=safe
-          zig build --build-file examples/rl-cartpole/build.zig
+          zig build --build-file examples/rl-cartpole/build.zig test-gui -Dpolicy-export=improved -Doptimize=safe
+          zig build --build-file examples/rl-cartpole/build.zig -Dpolicy-export=improved
           ./examples/rl-cartpole/zig-out/bin/zinn-rl-lab --snapshot cartpole.pbm
+          ./examples/rl-cartpole/zig-out/bin/zinn-rl-lab --snapshot-compare cartpole-compare.pbm
       - name: External project Build API
         run: zig build --build-file examples/project/build.zig train evaluate deploy infer-host simulate-uart
       - name: Check memory budgets (preserve pipeline failures)
@@ -120,3 +124,5 @@ jobs:
             progress-pty-results/
             rl-cartpole-results/
             cartpole.pbm
+            cartpole-compare.pbm
+            cartpole-quality-results/

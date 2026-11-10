@@ -1,0 +1,30 @@
+{
+  "commit": "d82c434",
+  "checkpoints": [
+    {
+      "seed": 42,
+      "checkpoint_sha256": "05a1b5b9539eacf6a4ef7b2635b83f45afccde9961ad5e1ddca9d6910ab9a98c",
+      "bytes": 1584
+    },
+    {
+      "seed": 43,
+      "checkpoint_sha256": "bf86159cdcaae43718bf1634d84d8400dfee5cde56ff14fd1c27efdd0ca7bd50",
+      "bytes": 1584
+    },
+    {
+      "seed": 44,
+      "checkpoint_sha256": "ee5370510b47476abacfe16ddc0e72c40081f248b4a281355cdaa251d80c492c",
+      "bytes": 1584
+    },
+    {
+      "seed": 45,
+      "checkpoint_sha256": "10fc58fabc5766cd120a2855211879ce36f7c807c18ad369c25864b24aecd2c3",
+      "bytes": 1584
+    },
+    {
+      "seed": 46,
+      "checkpoint_sha256": "fcced796ec5462966025cfde809dbbbc530e52df5dbfb0eba9f21b024c55274d",
+      "bytes": 1584
+    }
+  ]
+}
