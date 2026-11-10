@@ -30,7 +30,14 @@ are unchanged. No local sibling checkout of mimoc-ui is required.
   canvas breaks the segment so re-entry does not draw a connecting line.
 
 This recognizes **digits 0–9**, not letters or arbitrary text. Logit bars show
-integer scores, **not probabilities or calibrated confidence**. Blank input has
+raw int8 scores, **not probabilities or calibrated confidence**. Each frame's
+bars are min-max normalized across its ten logits: the minimum is empty and the
+maximum fills the 78px interior, with nearest-pixel integer rounding. All equal
+logits produce empty neutral bars; the existing prediction tie-break/outline
+stays unchanged. A negative logit can have a nonempty bar if it exceeds that
+frame's minimum. Raw values, model outputs and classification accuracy are
+unchanged. Top1-minus-top2 margin is available internally in raw logit units
+(0 for a tied maximum), without adding another UI field. Blank input has
 no prediction. Poorly shaped, incomplete or unfamiliar digits may be misclassified.
 
 `zig build --build-file examples/mnist-desktop/build.zig -Doptimize=safe` installs

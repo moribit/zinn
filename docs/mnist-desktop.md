@@ -27,9 +27,9 @@ calibration and 5000-sample validation export use the existing pipeline.
 
 macOS arm64 / Zig 0.17.0:
 
-- 7 headless tests in Debug/ReleaseSafe: blank/clear, bounded continuous strokes,
+- 13 headless tests in Debug/ReleaseSafe: blank/clear, bounded continuous strokes,
   translation invariance, area weights against training preprocessing, pointer/
-  focus lifecycle, immediate inference, generated sample logits and a drawn7.
+  focus lifecycle, immediate inference, generated sample logits and a drawn 7.
 - macOS executable and unsigned app bundle build; PBM snapshot renders without
   opening a window. The snapshot is stored in the example guide.
 - Actual AppKit window: Tab/Return activates SAMPLE, Escape clears, mouse drags
@@ -62,3 +62,56 @@ XOR CH32V003 production cross-build remains 1508B Flash/16B static SRAM. Offline
 link/API checks resolve 299 local links across 59 Markdown files. The CI matrix now
 runs desktop headless tests on Linux/macOS and builds/renders the macOS app without
 opening a GUI. Remote CI status is separate from these completed local checks.
+
+## Relative logit bars
+
+The original layout and controls are retained. Only the 78px interiors of the
+right-hand ten bars use new presentation math. Raw values remain int8; inference,
+argmax, preprocessing, weights/checkpoint and quantization are unchanged. No
+mimoc-ui modification, Softmax or floating-point score scaling was introduced.
+
+[logits.zig](../examples/mnist-desktop/logits.zig) provides pure analyze/barWidth
+functions. Width is `(value-min)*width/(max-min)`, rounded to nearest integer
+(ties up), with widened arithmetic. Min/max differences and margins can span 255;
+255×65535+127 safely fits u32. Values outside the supplied range clamp; equal or
+inverted bounds return 0. A tied distribution draws all empty bars; duplicate
+maxima in a nonconstant distribution each receive full width. The existing first
+maximum prediction and outline are unchanged. Margin is top1−top2 in raw score
+units, not confidence/accuracy; no always-visible field was added.
+
+For the example distribution `[2,-31,-35,-13,0,34,-5,-8,20,12]`:
+
+| Digit | Raw int8 logit | Previous width px | Relative width px |
+|---|---:|---:|---:|
+|5|34|49|78|
+|8|20|45|62|
+|9|12|42|53|
+|0|2|39|42|
+|1|-31|29|5|
+|2|-35|28|0|
+
+The margin is 14. The bars express that frame's relative score range, not
+recognition probabilities. A negative score is not inherently a zero-width bar.
+
+Verified locally with Zig 0.17.0/macOS:
+
+- Debug and ReleaseSafe: 13/13 tests. Added cases cover min/max/midpoint/rounding,
+  equal values, full int8 range, all-negative/all-positive values, duplicate
+  maxima, margins 0..255 and exhaustive monotonicity over every int8 min/max pair.
+- Pixel-level integration checks validate all five interior rows of each bar for
+  all 16 bundled samples; every logit and predicted class matches the original
+  generated fixtures. SAMPLE wrapping, CLEAR, drawn 7 and input lifecycle pass.
+- Before/after PBM snapshots differ in 380 pixels, all confined to bar interiors;
+  every other pixel, including raw numbers and prediction outline, is identical.
+  The [example screenshot](../examples/mnist-desktop/assets/screenshot.png) is updated.
+- In the actual macOS window, SAMPLE/Return updates the relative bars, Escape
+  clears the result, and mouse strokes form a 7 correctly classified as 7. The
+  maximum row remains outlined and full, with the minimum empty.
+
+Changed files: app.zig (rendering/integration tests), new logits.zig (pure math
+and unit tests), build.zig.zon (package file list), screenshot.png, example README,
+this report, and CI's formatting list. No model assets or model computation were
+changed. Physical trackpad gestures and manual resize were not separately
+retested in this small display change; their existing event/resize code is
+untouched. Linux native execution remains a CI check rather than a local macOS
+claim. No new accuracy or performance measurement is claimed.

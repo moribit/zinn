@@ -2,6 +2,7 @@ const std = @import("std");
 const m = @import("mimoc_ui");
 const generated = @import("trained_model");
 const drawing = @import("canvas.zig");
+const scores = @import("logits.zig");
 pub const width = 480;
 pub const height = 272;
 pub const Model = generated.Model;
@@ -158,11 +159,12 @@ pub const App = struct {
                     r.fillRect(.{ .x = 252 + @as(i16, @intCast(x)) * 8, .y = 66 + @as(i16, @intCast(y)) * 8, .w = 8, .h = 8 }, true);
             };
             m.font.draw(&r, .tiny5x7, 252, 144, "DIGIT 0-9", true);
+            const distribution = scores.analyze(&self.logits);
             for (self.logits, 0..) |value, i| {
                 const y: i16 = 66 + @as(i16, @intCast(i)) * 14;
                 m.font.draw(&r, .tiny5x7, 324, y, if (value >= 0) self.text("{d} {d: >4}", .{ i, @as(u8, @intCast(value)) }) else self.text("{d} {d: >4}", .{ i, value }), true);
                 r.rect(.{ .x = 376, .y = y, .w = 80, .h = 7 }, true);
-                const fill: i16 = @intCast(@divTrunc((@as(i32, value) + 128) * 78, 255));
+                const fill: i16 = @intCast(scores.barWidth(value, distribution.min, distribution.max, 78));
                 r.fillRect(.{ .x = 377, .y = y + 1, .w = fill, .h = 5 }, true);
                 if (i == digit) r.rect(.{ .x = 316, .y = y - 2, .w = 144, .h = 12 }, true);
             }
@@ -207,6 +209,7 @@ test "drag classifies immediately, outside/focus release stop drawing, clear but
 }
 test {
     _ = drawing;
+    _ = scores;
 }
 
 test "a seven drawn through the pointer adapter is classified as seven" {
@@ -219,4 +222,51 @@ test "a seven drawn through the pointer adapter is classified as seven" {
     app.receive(.{ .pointer_move = .{ .x = 63, .y = 160 } });
     app.receive(.{ .pointer_up = .{ .x = 63, .y = 160 } });
     try std.testing.expectEqual(@as(?u8, 7), app.prediction);
+}
+
+test "sample bars match relative widths; logits, predictions and clear remain unchanged" {
+    var app: App = .{};
+    app.render();
+    var previous_widths: [10]u16 = @splat(0);
+    var changed = false;
+    for (generated.expected) |expected| {
+        app.sample();
+        app.render();
+        try std.testing.expectEqualSlices(i8, &expected, &app.logits);
+        var predicted: u8 = 0;
+        for (expected, 0..) |value, i| if (value > expected[predicted]) {
+            predicted = @intCast(i);
+        };
+        try std.testing.expectEqual(@as(?u8, predicted), app.prediction);
+        const distribution = scores.analyze(&expected);
+        var surface = try m.surface.Mono1.init(&app.pixels, width, height);
+        for (expected, 0..) |value, i| {
+            const fill = scores.barWidth(value, distribution.min, distribution.max, 78);
+            changed = changed or fill != previous_widths[i];
+            previous_widths[i] = fill;
+            for (0..78) |x| for (0..5) |y| {
+                try std.testing.expectEqual(x < fill, surface.get(377 + @as(i16, @intCast(x)), 67 + @as(i16, @intCast(i)) * 14 + @as(i16, @intCast(y))));
+            };
+        }
+    }
+    try std.testing.expect(changed);
+    app.clear();
+    app.render();
+    try std.testing.expect(app.prediction == null);
+    try std.testing.expectEqualSlices(i8, &@as([10]i8, @splat(0)), &app.logits);
+    // The real SAMPLE input path still wraps to the first fixture after sixteen.
+    app.receive(.{ .pointer_down = .{ .x = 110, .y = 220 } });
+    app.receive(.{ .pointer_up = .{ .x = 110, .y = 220 } });
+    try std.testing.expectEqualSlices(i8, &generated.expected[0], &app.logits);
+}
+test "all tied logits draw empty bars and preserve the prediction outline" {
+    var app: App = .{};
+    app.logits = @splat(-20);
+    app.prediction = 0;
+    app.render();
+    var surface = try m.surface.Mono1.init(&app.pixels, width, height);
+    for (0..10) |i| for (0..78) |x| {
+        try std.testing.expect(!surface.get(377 + @as(i16, @intCast(x)), 68 + @as(i16, @intCast(i)) * 14));
+    };
+    try std.testing.expect(surface.get(316, 64));
 }

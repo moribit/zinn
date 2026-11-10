@@ -15,7 +15,7 @@ jobs:
         with:
           version: 0.17.0
       - run: zig version
-      - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/docs examples/project/build.zig examples/project/custom.build.zig examples/project/build.zig.zon examples/project/model.zig examples/integration examples/mnist-desktop/build.zig examples/mnist-desktop/build.zig.zon examples/mnist-desktop/app.zig examples/mnist-desktop/canvas.zig examples/mnist-desktop/main.zig examples/mnist-desktop/model.zig
+      - run: zig fmt --check build.zig build.zig.zon build_support src tests tools examples/xor examples/mnist examples/data_classifier examples/docs examples/project/build.zig examples/project/custom.build.zig examples/project/build.zig.zon examples/project/model.zig examples/integration examples/mnist-desktop/build.zig examples/mnist-desktop/build.zig.zon examples/mnist-desktop/app.zig examples/mnist-desktop/canvas.zig examples/mnist-desktop/logits.zig examples/mnist-desktop/main.zig examples/mnist-desktop/model.zig
       - run: zig build docs-check
       - run: zig build test --summary all 2>&1 | tee test-results-debug.txt
       - run: zig build test -Doptimize=safe --summary all 2>&1 | tee test-results-safe.txt
