@@ -10,6 +10,10 @@
 
 Zinn is a small neural network inference framework for resource-constrained microcontrollers. Define a model once, train and evaluate it on your computer, then generate integer inference code and CH32V003 firmware using Zig **0.17.0**.
 
+[![Zinn MNIST desktop demo recognizing a handwritten 4, with a 16×16 input preview and int8 class scores](docs/images/mnist-desktop.png)](examples/mnist-desktop/README.md)
+
+**Handwritten digit recognition with Zinn.** The [MNIST desktop example](examples/mnist-desktop/README.md) runs an int8 MLP32 model as you draw, with a monochrome UI built using mimoc-ui. Train and export models in Pure Zig, then reuse integer inference on the desktop or a microcontroller.
+
 ## Features
 
 - Dense and CNN training, CSV/IDX/gzip loading, checkpoints, calibration and Zig source generation in Pure Zig.
