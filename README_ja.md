@@ -6,6 +6,12 @@
 
 Zinnは極小マイコン向けの機械学習推論フレームワークです。Zig **0.17.0**でモデルを定義・学習・評価し、整数推論用ZigコードとCH32V003向けファームウェアを生成します。
 
+[**ブラウザでMNISTを試す →**](https://moribit.github.io/zinn-mnist-web/) · [Webデモのソース](https://github.com/moribit/zinn-mnist-web)
+
+[![Zinnの手書き数字認識デモ。クリックするとブラウザで試せます](docs/images/mnist-desktop.png)](https://moribit.github.io/zinn-mnist-web/)
+
+独立したWebAssemblyデモは、[デスクトップ版](examples/mnist-desktop/README.md)と同じZig製UI・前処理・int8モデルを再利用しています。インストールは不要で、描画と推論はブラウザ内で完結し、画像をアップロードしません。
+
 ## 特徴
 
 - Pure ZigによるDense/CNN学習、CSV/IDX/gzip入力、checkpoint、校正、ソース生成。
