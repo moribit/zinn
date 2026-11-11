@@ -10,5 +10,5 @@
             .hash = "mimoc_ui-0.1.0-9nb8bnJyFgA4WIjp3rA0lYjzMDsYTxl5AK_Ft07u17bf",
         },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "main.zig", "app.zig", "canvas.zig", "logits.zig", "model.zig", "assets", "README.md", "Info.plist" },
+    .paths = .{ "build.zig", "build.zig.zon", "main.zig", "app.zig", "canvas.zig", "logits.zig", "inspector.zig", "benchmark.zig", "model.zig", "assets", "README.md", "Info.plist" },
 }

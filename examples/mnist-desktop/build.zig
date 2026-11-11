@@ -38,6 +38,10 @@ pub fn build(b: *std.Build) void {
     controller.addImport("mimoc_ui", ui);
     controller.addImport("trained_model", model);
     controller.addImport("zinn_data", b.createModule(.{ .root_source_file = dep.path("src/data.zig"), .target = target, .optimize = optimize }));
+    const benchmark = b.addExecutable(.{ .name = "mnist-ui-benchmark", .root_module = b.createModule(.{ .root_source_file = b.path("benchmark.zig"), .target = target, .optimize = optimize }) });
+    benchmark.root_module.addImport("app", controller);
+    benchmark.root_module.addImport("trained_model", model);
+    b.step("benchmark", "Host inference and framebuffer median timings; no display").dependOn(&b.addRunArtifact(benchmark).step);
     const tests = b.addTest(.{ .root_module = controller });
     b.step("check", "Compile headless app/tests for the selected target").dependOn(&tests.step);
     b.step("test", "Headless canvas, preprocessing, input and integer inference tests").dependOn(&b.addRunArtifact(tests).step);

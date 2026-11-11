@@ -2,6 +2,7 @@ const std = @import("std");
 const m = @import("mimoc_ui");
 const generated = @import("trained_model");
 const drawing = @import("canvas.zig");
+pub const inspector = @import("inspector.zig");
 const scores = @import("logits.zig");
 pub const width = 480;
 pub const height = 272;
@@ -14,6 +15,8 @@ pub const canvas_rect = m.geometry.Rect{ .x = 24, .y = 64, .w = drawing.side, .h
 pub const App = struct {
     canvas: drawing.Canvas = .{},
     workspace: Model.Workspace = .{},
+    trace: Model.Trace = .{},
+    inspection: inspector.State = .{},
     input: [256]i8 = @splat(0),
     logits: [10]i8 = @splat(0),
     prediction: ?u8 = null,
@@ -33,6 +36,8 @@ pub const App = struct {
     }
     pub fn clear(self: *App) void {
         self.canvas.clear();
+        self.trace = .{};
+        self.inspection.clear();
         @memset(&self.input, 0);
         @memset(&self.logits, 0);
         self.prediction = null;
@@ -40,7 +45,8 @@ pub const App = struct {
         self.stopStroke();
     }
     fn infer(self: *App) void {
-        Model.infer(&self.input, &self.logits, &self.workspace);
+        Model.inferTraced(&self.input, &self.logits, &self.workspace, &self.trace);
+        self.inspection.restart();
         var best: u8 = 0;
         for (self.logits, 0..) |v, i| if (v > self.logits[best]) {
             best = @intCast(i);
@@ -95,8 +101,25 @@ pub const App = struct {
     pub fn receive(self: *App, event: m.input.InputEvent) void {
         const action = self.display.dispatch(event);
         if (action.activated) {
+            inline for (0..3) |i| if (action.target == Ui.childId(Ui.rootId(1), 20 + i)) {
+                self.stopStroke();
+                self.inspection.mode = @fromBackingInt(@intCast(i));
+                self.inspection.restart();
+            };
+            if (self.inspection.mode != .play) self.inspection.control(action.target.?);
             if (action.target == Ui.childId(Ui.rootId(1), 10)) self.clear();
             if (action.target == Ui.childId(Ui.rootId(1), 11)) self.sample();
+        }
+        if (self.inspection.mode != .play) {
+            switch (event) {
+                .pointer_down => |p| self.inspection.select(p),
+                .key_down => |key| if (key == .escape or key == .backspace or key == .delete) {
+                    self.clear();
+                },
+                else => {},
+            }
+            self.render();
+            return;
         }
         switch (event) {
             .pointer_down => |p| if (local(p) != null) {
@@ -118,13 +141,22 @@ pub const App = struct {
         }
         self.render();
     }
+    /// Absolute monotonic milliseconds supplied by platform; no inference on ticks.
+    pub fn tick(self: *App, now: u32) bool {
+        if (!self.inspection.tick(now, self.prediction != null)) return false;
+        self.render();
+        return true;
+    }
     pub fn render(self: *App) void {
+        if (self.inspection.mode != .play) {
+            inspector.render(self);
+            return;
+        }
         self.label_count = 0;
         self.display.viewport = .{ .w = width, .h = height };
         var ui = Ui.begin(&self.display);
         var root = ui.stack(1, .{});
         ui.textWith(2, "ZINN / HANDWRITTEN DIGITS", .{ .offset = .{ .x = 24, .y = 16 } });
-        ui.textWith(3, "PURE ZIG / MIMOC UI", .{ .offset = .{ .x = 324, .y = 16 } });
         ui.textWith(4, "DRAW ONE DIGIT", .{ .offset = .{ .x = 24, .y = 44 } });
         ui.textWith(5, "16X16 INPUT", .{ .offset = .{ .x = 156, .y = 44 } });
         ui.textWith(6, "PREDICTION", .{ .offset = .{ .x = 252, .y = 44 } });
@@ -134,12 +166,14 @@ pub const App = struct {
         ui.buttonWith(11, "SAMPLE", .{ .offset = .{ .x = 100, .y = 214 }, .size = .{ .w = 64, .h = 20 }, .text_alignment = .center, .text_vertical_alignment = .center });
         ui.textWith(12, "DRAG TO DRAW / ESC TO CLEAR", .{ .offset = .{ .x = 24, .y = 250 } });
         ui.textWith(13, self.text("MLP32 INT8 / ID {x}", .{generated.model_id}), .{ .offset = .{ .x = 276, .y = 250 } });
+        inspector.navigator(&ui);
         root.end();
         ui.finish();
         m.headless.render(&self.display, &self.pixels, width, height) catch unreachable;
         var surface = m.surface.Mono1.init(&self.pixels, width, height) catch unreachable;
         var r = m.mono1.Renderer.init(&surface);
         r.hline(24, 32, width - 48, true);
+        r.hline(292, 30, 52, true);
         r.rect(.{ .x = canvas_rect.x - 2, .y = canvas_rect.y - 2, .w = canvas_rect.w + 4, .h = canvas_rect.h + 4 }, true);
         for (self.canvas.pixels, 0..) |v, i| {
             const x = i % drawing.side;
@@ -269,4 +303,117 @@ test "all tied logits draw empty bars and preserve the prediction outline" {
         try std.testing.expect(!surface.get(377 + @as(i16, @intCast(x)), 68 + @as(i16, @intCast(i)) * 14));
     };
     try std.testing.expect(surface.get(316, 64));
+}
+
+test "trace uses exact Dense outputs and modes preserve all sixteen samples" {
+    var app: App = .{};
+    for (generated.expected) |expected| {
+        app.sample();
+        var ordinary: [10]i8 = undefined;
+        var ws: Model.Workspace = .{};
+        Model.infer(&app.input, &ordinary, &ws);
+        try std.testing.expectEqualSlices(i8, &ordinary, &app.logits);
+        try std.testing.expectEqualSlices(i8, &expected, app.trace.layer(1));
+        var hidden: [32]i8 = undefined;
+        Model.Layer(0).run(&app.input, &hidden);
+        try std.testing.expectEqualSlices(i8, &hidden, app.trace.layer(0));
+        const pixels = app.canvas.pixels;
+        const count = app.inference_count;
+        const trace = app.trace;
+        for ([_]inspector.Mode{ .network, .step, .play }) |mode| {
+            app.inspection.mode = mode;
+            app.inspection.stage = 3;
+            app.render();
+            try std.testing.expectEqualSlices(i8, &expected, &app.logits);
+            try std.testing.expectEqualSlices(u8, &pixels, &app.canvas.pixels);
+            try std.testing.expectEqualSlices(i8, &trace.values, &app.trace.values);
+            try std.testing.expectEqual(count, app.inference_count);
+        }
+    }
+    app.inspection.mode = .network;
+    app.inspection.hidden = 31;
+    app.sample();
+    try std.testing.expectEqual(@as(u8, 0), app.inspection.stage);
+    try std.testing.expectEqual(@as(usize, 31), app.inspection.hidden);
+    app.clear();
+    try std.testing.expectEqualSlices(i8, &@as([42]i8, @splat(0)), &app.trace.values);
+    try std.testing.expect(app.prediction == null);
+    try std.testing.expect(!app.inspection.running);
+}
+
+test "mode widgets, neuron hit testing and step controls use real input dispatch" {
+    var app: App = .{};
+    app.sample();
+    app.render();
+    const input = app.input;
+    const logits = app.logits;
+    app.receive(.{ .pointer_down = .{ .x = 365, .y = 18 } });
+    app.receive(.{ .pointer_up = .{ .x = 365, .y = 18 } });
+    try std.testing.expectEqual(inspector.Mode.network, app.inspection.mode);
+    app.receive(.{ .pointer_down = inspector.hiddenPoint(17) });
+    app.receive(.{ .pointer_up = inspector.hiddenPoint(17) });
+    try std.testing.expectEqual(@as(usize, 17), app.inspection.hidden);
+    app.receive(.{ .pointer_down = inspector.outputPoint(4) });
+    app.receive(.{ .pointer_up = inspector.outputPoint(4) });
+    try std.testing.expectEqual(@as(?usize, 4), app.inspection.output);
+    app.receive(.{ .pointer_down = .{ .x = 420, .y = 18 } });
+    app.receive(.{ .pointer_up = .{ .x = 420, .y = 18 } });
+    try std.testing.expectEqual(inspector.Mode.step, app.inspection.mode);
+    app.receive(.{ .pointer_down = .{ .x = 90, .y = 252 } });
+    app.receive(.{ .pointer_up = .{ .x = 90, .y = 252 } });
+    try std.testing.expectEqual(@as(u8, 1), app.inspection.stage);
+    app.receive(.{ .pointer_down = .{ .x = 315, .y = 18 } });
+    app.receive(.{ .pointer_up = .{ .x = 315, .y = 18 } });
+    try std.testing.expectEqual(inspector.Mode.play, app.inspection.mode);
+    try std.testing.expectEqualSlices(i8, &input, &app.input);
+    try std.testing.expectEqualSlices(i8, &logits, &app.logits);
+    try std.testing.expectEqual(@as(usize, 17), app.inspection.hidden);
+}
+test {
+    _ = inspector;
+}
+
+test "PLAY pixels below navigator retain pre-inspector snapshot" {
+    var app: App = .{};
+    app.render();
+    app.sample();
+    app.render();
+    var hash: u64 = 14695981039346656037;
+    for (app.pixels[480 * 4 ..]) |b| hash = (hash ^ b) *% 1099511628211;
+    try std.testing.expectEqual(@as(u64, 0xbe7698fae0a7df11), hash);
+}
+
+test "NETWORK framebuffer matches WebAssembly fixture bit for bit" {
+    var app: App = .{};
+    app.render();
+    app.sample();
+    app.render();
+    app.receive(.{ .pointer_down = .{ .x = 365, .y = 18 } });
+    app.receive(.{ .pointer_up = .{ .x = 365, .y = 18 } });
+    var now: u32 = 0;
+    while (now <= 2200) : (now += 16) _ = app.tick(now);
+    try std.testing.expectEqual(@as(u8, 3), app.inspection.stage);
+    var hash: u64 = 14695981039346656037;
+    for (app.pixels) |b| hash = (hash ^ b) *% 1099511628211;
+    try std.testing.expectEqual(@as(u64, 0x44d3f2fa2e1667f2), hash);
+    try std.testing.expectEqual(@as(usize, 1), app.inference_count);
+}
+
+test "parameter inspection reconstructs every hidden activation from real weights" {
+    const L = Model.Layer(0);
+    const q = L.quantization;
+    var app: App = .{};
+    for (generated.inputs) |input| {
+        app.sample();
+        for (0..32) |row| {
+            var acc: i64 = L.biasAt(row);
+            for (input, 0..) |v, i| acc += (@as(i64, v) - q.input_zero) * L.weightAt(row, i);
+            const product = acc * q.multiplier;
+            const divisor = @as(u64, 1) << q.shift;
+            const rounded: i64 = @intCast((@abs(product) + divisor / 2) / divisor);
+            const raw = (if (product < 0) -rounded else rounded) + q.output_zero;
+            const expected: i8 = @intCast(@max(q.output_zero, @max(-128, @min(127, raw))));
+            try std.testing.expectEqual(expected, app.trace.layer(0)[row]);
+        }
+    }
 }

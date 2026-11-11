@@ -9,6 +9,8 @@ Start with [Getting Started](getting-started.md), then [an independent CSV appli
 3. [MNIST on CH32V003](tutorials/mnist.md)
 4. [UART Inference](tutorials/uart.md)
 
+- [MNIST network inspector](mnist-inspector.md) / [日本語](mnist-inspector_ja.md): actual weights, activations and step replay.
+
 ## Reference and concepts
 
 - [API reference](api/README.md): models, training/data, quantization/export, inference/workspace, Build API/options, budgets, UART/adapters.

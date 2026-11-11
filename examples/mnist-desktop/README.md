@@ -61,8 +61,9 @@ flowchart LR
 ```
 
 Brush antialiasing and float preprocessing are host application code. The
-inference call is the existing integer Model.infer with a fixed caller-owned
-workspace. There is no inference or redraw on idle ticks. The drawing normalization
+inference uses Model.inferTraced with the same integer kernels and a fixed
+caller-owned workspace plus a 42-byte layer snapshot. PLAY has no idle redraw;
+NETWORK/STEP redraw only during snapshot replay, never performing idle inference. The drawing normalization
 is an application heuristic to resemble MNIST, not an established accuracy claim
 for mouse-written digits. The final 28→16 area weighting is tested against Zinn's
 training preprocessing. All generated fixture logits are checked exactly.
@@ -118,3 +119,13 @@ See the [integration guide](../../docs/integration.md) and
 ## Learn how it works
 
 Follow the beginner tutorials: [English MNIST inference](../../docs/tutorials/en/03-mnist-inference.md) / [日本語・MNISTの推論](../../docs/tutorials/ja/03-mnist-inference.md). They explain pixels, logits, relative bars and integer inference without assuming ML knowledge.
+
+## Network inspector
+
+PLAY preserves the original layout. The top-right mimoc-ui buttons add NETWORK
+and STEP: inspect 32 hidden activations, signed weight maps and output connections,
+or replay Input → Hidden → Output → Prediction without recomputing inference.
+See [English guide](../../docs/mnist-inspector.md) / [日本語ガイド](../../docs/mnist-inspector_ja.md).
+The same controller runs in the [browser demo](https://moribit.github.io/zinn-mnist-web/).
+Snapshots support `--snapshot-network` and `--snapshot-step` in addition to the
+unchanged `--snapshot` PLAY output.

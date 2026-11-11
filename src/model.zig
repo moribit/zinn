@@ -31,6 +31,15 @@ pub fn Dense(comptime config: DenseOptions) type {
         }
     }
     return struct {
+        /// Read-only model metadata; unused accessors emit no target data/code.
+        pub const quantization = config.quant;
+        pub fn weightAt(output: usize, input: usize) i8 {
+            std.debug.assert(output < output_len and input < input_len);
+            return lowbit.get(config.format, config.weights, config.packed_weights, output * input_len + input);
+        }
+        pub fn biasAt(output: usize) i32 {
+            return config.bias[output];
+        }
         pub const parameter_bytes = config.weights.len + config.packed_weights.len + @sizeOf(i32) * config.bias.len;
         pub const input_len = config.input;
         pub const output_len = config.output;
@@ -67,6 +76,29 @@ pub fn Sequential(comptime layers: anytype) type {
         break :blk sizes;
     };
     return struct {
+        pub const layer_count = count;
+        pub fn Layer(comptime index: usize) type {
+            return layers[index];
+        }
+        pub const trace_bytes = blk: {
+            var total: usize = 0;
+            for (layers) |L| total += L.output_len;
+            break :blk total;
+        };
+        /// Caller-owned copy of each layer output, independent of workspace reuse.
+        pub const Trace = struct {
+            values: [trace_bytes]i8 = @splat(0),
+            pub fn layer(self: *const @This(), comptime index: usize) *const [layers[index].output_len]i8 {
+                const offset = comptime blk: {
+                    var n: usize = 0;
+                    for (layers, 0..) |L, j| {
+                        if (j < index) n += L.output_len;
+                    }
+                    break :blk n;
+                };
+                return self.values[offset..][0..layers[index].output_len];
+            }
+        };
         pub const input_len = layers[0].input_len;
         pub const output_len = layers[count - 1].output_len;
         pub const Workspace = struct { first: [widths[0]]i8 = undefined, second: [widths[1]]i8 = undefined };
@@ -88,6 +120,13 @@ pub fn Sequential(comptime layers: anytype) type {
 
         /// Input/output may alias each other but must not alias workspace.
         pub fn infer(input: *const [input_len]i8, output: *[output_len]i8, ws: *Workspace) void {
+            execute(input, output, ws, false, null);
+        }
+        /// Trace must not alias input, output or workspace. No extra inference.
+        pub fn inferTraced(input: *const [input_len]i8, output: *[output_len]i8, ws: *Workspace, trace: *Trace) void {
+            execute(input, output, ws, true, trace);
+        }
+        fn execute(input: *const [input_len]i8, output: *[output_len]i8, ws: *Workspace, comptime observing: bool, trace: ?*Trace) void {
             if (count == 1) {
                 const in_start = @intFromPtr(input);
                 const out_start = @intFromPtr(output);
@@ -95,11 +134,22 @@ pub fn Sequential(comptime layers: anytype) type {
                     @memcpy(ws.first[0..input_len], input);
                     layers[0].run(ws.first[0..input_len], output);
                 } else layers[0].run(input, output);
+                if (observing) @memcpy(&trace.?.values, output);
             } else {
                 inline for (layers, 0..) |L, i| {
                     const src = if (i == 0) input else if ((i - 1) % 2 == 0) ws.first[0..L.input_len] else ws.second[0..L.input_len];
                     const dst = if (i + 1 == count) output else if (i % 2 == 0) ws.first[0..L.output_len] else ws.second[0..L.output_len];
                     L.run(src, dst);
+                    if (observing) {
+                        const offset = comptime blk: {
+                            var n: usize = 0;
+                            for (layers, 0..) |P, j| {
+                                if (j < i) n += P.output_len;
+                            }
+                            break :blk n;
+                        };
+                        @memcpy(trace.?.values[offset..][0..L.output_len], dst);
+                    }
                 }
             }
         }

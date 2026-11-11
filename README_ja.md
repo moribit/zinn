@@ -12,6 +12,8 @@ Zinnは極小マイコン向けの機械学習推論フレームワークです�
 
 独立したWebAssemblyデモは、[デスクトップ版](examples/mnist-desktop/README.md)と同じZig製UI・前処理・int8モデルを再利用しています。インストールは不要で、描画と推論はブラウザ内で完結し、画像をアップロードしません。
 
+[MNIST Inspectorで重みとActivationを見る](docs/mnist-inspector_ja.md)：macOSとブラウザでPLAY／NETWORK／STEPを切り替えられます。
+
 ## 特徴
 
 - Pure ZigによるDense/CNN学習、CSV/IDX/gzip入力、checkpoint、校正、ソース生成。

@@ -39,6 +39,10 @@ test "documented static Dense, Conv, Pool, packed and transport APIs" {
     var output: [M.output_len]i8 = undefined;
     M.infer(&.{ 3, 9 }, &output, &ws);
     try std.testing.expectEqualSlices(i8, &.{ 3, 9 }, &output);
+    var trace: M.Trace = .{};
+    M.inferTraced(&.{ 3, 9 }, &output, &ws, &trace);
+    try std.testing.expectEqualSlices(i8, &output, trace.layer(0));
+    try std.testing.expectEqual(@as(i8, 1), M.Layer(0).weightAt(0, 0));
     const C = z.Conv2D(.{ .input = .{ .height = 2, .width = 2, .channels = 1 }, .output_channels = 1, .kernel = 1, .weights = &.{1}, .bias = &.{0} });
     const P = z.AveragePool2D(.{ .input = C.output_shape });
     var convolution: [C.output_len]i8 = undefined;

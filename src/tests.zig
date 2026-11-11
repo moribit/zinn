@@ -102,3 +102,37 @@ test "single layer alias and three layer asymmetric workspace" {
     try std.testing.expectEqualSlices(i8, &.{ 10, -10 }, &data);
     try expect(@as(usize, 3), N.workspace_bytes);
 }
+
+test "optional trace preserves aliasing, int4 metadata and reused multilayer outputs" {
+    const D = z.Dense(.{ .input = 2, .output = 2, .format = .int4, .packed_weights = &.{ 0x1f, 0xe3 }, .bias = &.{ 2, -1 } });
+    try expect(@as(i8, -1), D.weightAt(0, 0));
+    try expect(@as(i8, 1), D.weightAt(0, 1));
+    try expect(@as(i8, 3), D.weightAt(1, 0));
+    try expect(@as(i8, -2), D.weightAt(1, 1));
+    try expect(@as(i32, -1), D.biasAt(1));
+    const One = z.Sequential(.{D});
+    var ws: One.Workspace = .{};
+    var trace: One.Trace = .{};
+    var alias = [_]i8{ 3, 4 };
+    One.inferTraced(&alias, &alias, &ws, &trace);
+    try std.testing.expectEqualSlices(i8, &.{ 3, 0 }, &alias);
+    try std.testing.expectEqualSlices(i8, &alias, trace.layer(0));
+    const M = z.Sequential(.{ D, D, D, D });
+    var multi_ws: M.Workspace = .{};
+    var multi_trace: M.Trace = .{};
+    var output: [2]i8 = undefined;
+    var direct: [2]i8 = undefined;
+    M.infer(&.{ 3, 4 }, &direct, &multi_ws);
+    M.inferTraced(&.{ 3, 4 }, &output, &multi_ws, &multi_trace);
+    try std.testing.expectEqualSlices(i8, &direct, &output);
+    var previous = [_]i8{ 3, 4 };
+    inline for (0..4) |i| {
+        var next: [2]i8 = undefined;
+        D.run(&previous, &next);
+        try std.testing.expectEqualSlices(i8, &next, multi_trace.layer(i));
+        previous = next;
+    }
+    @memset(&multi_ws.first, 99);
+    @memset(&multi_ws.second, 88);
+    try std.testing.expectEqualSlices(i8, &output, multi_trace.layer(3));
+}

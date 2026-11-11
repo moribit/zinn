@@ -90,6 +90,18 @@ const Checker = struct {
         }
         return output.toOwnedSlice(self.a);
     }
+    fn shellFences(self: *@This(), bytes: []const u8) ![]const u8 {
+        var output: std.ArrayList(u8) = .empty;
+        var lines = std.mem.splitScalar(u8, bytes, '\n');
+        var inside = false;
+        while (lines.next()) |line| {
+            if (std.mem.eql(u8, line, "```sh")) inside = true else if (std.mem.eql(u8, line, "```")) inside = false else if (inside) {
+                try output.appendSlice(self.a, line);
+                try output.append(self.a, '\n');
+            }
+        }
+        return output.toOwnedSlice(self.a);
+    }
     fn mirror(self: *@This(), path: []const u8, marker: []const u8, source: []const u8) !void {
         const bytes = try self.read(path);
         const start = std.mem.indexOf(u8, bytes, marker) orelse return self.fail(path, marker);
@@ -125,6 +137,7 @@ pub fn main(init: std.process.Init) !void {
     try c.mirror("docs/tutorials/en/05-cartpole-dqn.md", "<!-- zinn-cartpole-definition -->", "examples/rl-cartpole/model.zig");
     try c.mirror("docs/tutorials/ja/02-mnist-training.md", "<!-- zinn-mnist-definition -->", "examples/mnist-desktop/model.zig");
     try c.mirror("docs/tutorials/ja/05-cartpole-dqn.md", "<!-- zinn-cartpole-definition -->", "examples/rl-cartpole/model.zig");
-    std.debug.print("documentation: {d} files, {d} local links, {d} failures; 9 mirrored fences; 7 bilingual code/diagram pairs\n", .{ c.files, c.links, c.failures });
+    if (!std.mem.eql(u8, try c.shellFences(try c.read("docs/mnist-inspector.md")), try c.shellFences(try c.read("docs/mnist-inspector_ja.md")))) c.fail("docs/mnist-inspector.md", "docs/mnist-inspector_ja.md commands");
+    std.debug.print("documentation: {d} files, {d} local links, {d} failures; 9 mirrored fences; 7 bilingual code/diagram pairs; inspector bilingual commands\n", .{ c.files, c.links, c.failures });
     if (c.failures != 0) return error.BrokenDocumentation;
 }

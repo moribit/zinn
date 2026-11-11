@@ -18,6 +18,8 @@ Zinn is a small neural network inference framework for resource-constrained micr
 
 The separate [WebAssembly demo](https://github.com/moribit/zinn-mnist-web) reuses the same Zig UI, preprocessing and integer model in your browser. No installation or image upload is required; drawing and inference run locally.
 
+[Explore weights and activations with the MNIST Inspector](docs/mnist-inspector.md): PLAY / NETWORK / STEP on macOS and in the browser.
+
 ## Features
 
 - Dense and CNN training, CSV/IDX/gzip loading, checkpoints, calibration and Zig source generation in Pure Zig.

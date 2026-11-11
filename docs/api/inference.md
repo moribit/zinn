@@ -49,3 +49,31 @@ in [Build API](build.md) and [integration](../integration.md). These distinguish
 host source generation from consumer-target compilation. Share a single core
 Module instance when importing the core and generated models into one executable;
 Zig disallows overlapping source ownership by independent modules.
+
+## Optional layer trace and parameter inspection
+
+`M.inferTraced(input, output, ws, trace:*M.Trace) void` runs the same kernels as
+`infer`, additionally copying each layer output to caller-owned storage. No heap
+or second forward pass. `M.trace_bytes` is the sum of layer output lengths;
+`M.Trace.values` is that flat int8 array. `trace.layer(comptime index)` returns
+`*const [M.Layer(index).output_len]i8`. Indices must be compile-time valid.
+`M.layer_count` and `M.Layer(comptime index) type` expose the static structure.
+Trace must not overlap input, output or workspace. Keep separate traces/workspaces
+for concurrent callers. Reusing workspace does not invalidate a saved trace.
+
+After the example above (also compiled by docs-check):
+
+```zig
+var trace: M.Trace = .{};
+M.inferTraced(&.{ 3, 9 }, &out, &ws, &trace);
+const first_output = trace.layer(0);
+_ = first_output;
+```
+
+Dense adds `weightAt(output:usize,input:usize) i8`, `biasAt(output:usize) i32`
+and the compile-time `quantization: quant.Params` constant. Indices must be in
+range; weights include signed packed-int4 decoding. Bias uses accumulator units.
+These are read-only views, not parameter mutation APIs. Existing infer signatures
+and buffer budgets are unchanged. Nonobserving inference compiles without trace
+copies or trace storage. See the [MNIST inspector](../mnist-inspector.md) for a
+host/browser consumer and the distinction between weights and activations.

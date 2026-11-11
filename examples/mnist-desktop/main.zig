@@ -11,15 +11,23 @@ fn onEvent(event: window.Event) void {
             app.render();
         },
         .resize => {}, // Fixed logical surface; resizing clips without changing pointer coordinates.
-        .tick => return, // No idle inference or redraw loop.
+        .tick => |now| if (!app.tick(now)) return, // Redraw only active snapshot animation.
     }
     window.present(&app.pixels, .{ .w = application.width, .h = application.height });
 }
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     app.render();
-    if (args.len == 3 and std.mem.eql(u8, args[1], "--snapshot")) {
+    if (args.len == 3 and (std.mem.eql(u8, args[1], "--snapshot") or std.mem.eql(u8, args[1], "--snapshot-network") or std.mem.eql(u8, args[1], "--snapshot-step"))) {
         app.sample();
+        if (std.mem.eql(u8, args[1], "--snapshot-network")) {
+            app.inspection.mode = .network;
+            app.inspection.stage = 3;
+        }
+        if (std.mem.eql(u8, args[1], "--snapshot-step")) {
+            app.inspection.mode = .step;
+            app.inspection.stage = 1;
+        }
         app.render();
         var file = try std.Io.Dir.cwd().createFile(init.io, args[2], .{});
         defer file.close(init.io);
