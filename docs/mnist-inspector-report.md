@@ -47,7 +47,10 @@ browser frame times are unmeasured. The fixed native timer/browser RAF schedules
 replay independently of inference. The optional benchmark is not linked into the UI.
 
 ReleaseSmall WASM grows from 109,267 B to 118,840 B (+9,573 B); ReleaseSafe is
-905,646 B. These are the complete browser module, not the MCU model size.
+905,646 B with a local-path dependency, or 905,994 B with the published commit
+pin (assertion/source-path metadata can change size). These are the complete
+browser module, not the MCU model size. The pinned Web project passes 22 native
+tests in each mode (20 component + 2 ABI tests), plus both WASM numerical checks.
 
 The browser adapter requests animation frames only while replay is active.
 The logical framebuffer stays 16,320 bytes; the app adds a 42-byte trace plus
